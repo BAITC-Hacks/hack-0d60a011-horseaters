@@ -163,6 +163,7 @@ class SqlAlchemyInventoryRepository(SqlAlchemyReadRepository, InventoryRepositor
     def list_snapshots(
         self, product_id: UUID, warehouse_id: UUID, *,
         started_at: datetime, ended_at: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
     ) -> Sequence[InventorySnapshot]:
         """Existing inclusive range API, restricted to completed imports."""
         start, end = utc(started_at), utc(ended_at)
@@ -172,7 +173,7 @@ class SqlAlchemyInventoryRepository(SqlAlchemyReadRepository, InventoryRepositor
         query = select(model).where(
             model.product_id == product_id, model.warehouse_id == warehouse_id,
             model.snapshot_at >= start, model.snapshot_at <= end,
-            visible_import(model.import_batch_id, None),
+            visible_import(model.import_batch_id, import_batch_ids),
         ).order_by(model.snapshot_at, model.id)
         return tuple(self._read(query, InventorySnapshot))
 
