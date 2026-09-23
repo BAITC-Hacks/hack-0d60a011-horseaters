@@ -6,6 +6,7 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from backend.domain.entities.enums import CalculationRunStatus
+from backend.domain.value_objects.demand import DemandSource
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -14,6 +15,7 @@ class RunCalculationCommand:
     horizon_days: int
     warehouse_id: UUID | None = None
     category_id: UUID | None = None
+    demand_source: DemandSource = DemandSource.TRANSACTIONS
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

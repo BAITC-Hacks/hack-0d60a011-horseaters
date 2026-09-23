@@ -12,6 +12,8 @@ from sqlalchemy import func, select
 
 from backend.domain.enums import ImportStatus, UserRole
 from backend.infrastructure.api.main import create_app
+from backend.infrastructure.api.dependencies import get_current_user
+from backend.domain.entities.catalog import User
 from backend.infrastructure.config.settings import Settings
 from backend.infrastructure.persistence.database import Database
 from backend.infrastructure.persistence.models import Base
@@ -53,11 +55,14 @@ class ImportApiTests(unittest.TestCase):
                 )
             )
         self.app = create_app(Settings(database_url=POSTGRES_URL, _env_file=None))
+        self.app.dependency_overrides[get_current_user] = lambda: User(
+            id=self.user_id, external_id="verified-buyer", display_name="Buyer", role=UserRole.BUYER,
+        )
 
     def post(self, client: TestClient, source: str, content: bytes, name="source.xlsx"):
         return client.post(
             "/api/imports",
-            data={"source_type": source, "imported_by": str(self.user_id)},
+            data={"source_type": source},
             files={
                 "file": (
                     name,

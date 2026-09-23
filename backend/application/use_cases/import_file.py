@@ -5,6 +5,8 @@ from hashlib import sha256
 from backend.application.dto.imports import ImportFileCommand, ImportFileResult
 from backend.application.ports.imports import ImportFileReader, ImportGateway
 
+MAX_IMPORT_FILE_SIZE = 25 * 1024 * 1024
+
 
 class ImportFileError(RuntimeError):
     pass
@@ -20,7 +22,7 @@ class ImportFileUseCase:
         reader: ImportFileReader,
         gateway: ImportGateway,
         *,
-        max_file_size: int = 25 * 1024 * 1024,
+        max_file_size: int = MAX_IMPORT_FILE_SIZE,
     ) -> None:
         self._reader = reader
         self._gateway = gateway

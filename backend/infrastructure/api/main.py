@@ -13,6 +13,11 @@ from backend.infrastructure.api.routers.procurement import router as procurement
 from backend.infrastructure.api.routers.imports import router as imports_router
 from backend.infrastructure.api.exceptions import ApiError
 from backend.infrastructure.api.schemas.errors import error_response
+from backend.infrastructure.api.routers.calculation_runs import router as calculation_runs_router
+from backend.infrastructure.api.routers.recommendations import router as recommendations_router
+from backend.infrastructure.api.routers.orders import router as orders_router
+from backend.infrastructure.api.errors import install_error_handlers
+from backend.infrastructure.excel.artifact_store import FileExportArtifactStore
 from backend.infrastructure.persistence.database import Database
 
 
@@ -26,11 +31,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database = Database(config.database_url, echo=config.db_echo)
         try:
             app.state.database = database
+            app.state.export_artifacts = FileExportArtifactStore(config.order_export_directory)
             yield
         finally:
             database.dispose()
 
     app = FastAPI(title="Warehouse replenishment", lifespan=lifespan)
+    install_error_handlers(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -38,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID"],
+        expose_headers=["X-Request-ID", "Content-Disposition", "ETag"],
     )
 
     @app.middleware("http")
@@ -112,6 +119,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(procurement_router)
     app.include_router(ai_router)
     app.include_router(imports_router)
+    app.include_router(calculation_runs_router)
+    app.include_router(recommendations_router)
+    app.include_router(orders_router)
 
     # Versioned liveness endpoint used by Docker and orchestration.
     @app.get("/api/v1/health", tags=["system"])

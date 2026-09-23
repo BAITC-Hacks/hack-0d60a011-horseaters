@@ -3,16 +3,20 @@ from uuid import UUID
 
 from backend.application.dto.order import ExportedOrder
 from backend.application.ports.order_exporter import OrderExporter
+from backend.application.ports.export_artifacts import ExportArtifactStore
 from backend.application.ports.unit_of_work import UnitOfWorkFactory
 from backend.domain.entities.enums import ExportFormat, PurchaseOrderStatus
 from backend.domain.entities.order_export import OrderExport
 from backend.domain.repositories.order_repository import OrderNotFoundError
+from backend.domain.errors import InvalidEntityStateError
 
 
 class ExportOrder:
-    def __init__(self, uow_factory: UnitOfWorkFactory, exporter: OrderExporter) -> None:
+    def __init__(self, uow_factory: UnitOfWorkFactory, exporter: OrderExporter,
+                 artifact_store: ExportArtifactStore | None = None) -> None:
         self._uow_factory = uow_factory
         self._exporter = exporter
+        self._artifact_store = artifact_store
 
     def execute(self, order_id: UUID, *, user_id: UUID) -> ExportedOrder:
         """Return bytes after committing export audit; file_name is a download name, not a path."""
@@ -23,7 +27,7 @@ class ExportOrder:
             if order is None:
                 raise OrderNotFoundError(order_id)
             if order.status is not PurchaseOrderStatus.APPROVED:
-                raise ValueError("only an approved order can be exported")
+                raise InvalidEntityStateError("only an approved order can be exported")
             supplier = uow.suppliers.get_by_id(order.supplier_id)
             warehouse = uow.warehouses.get_by_id(order.warehouse_id)
             if supplier is None or warehouse is None:
@@ -40,6 +44,10 @@ class ExportOrder:
             metadata = OrderExport(purchase_order_id=order.id, format=ExportFormat.XLSX,
                                    file_name=f"order-{order.id}.xlsx", file_checksum=sha256(content).hexdigest(),
                                    created_by=user_id)
+            if self._artifact_store is not None:
+                # File first, then metadata/status in one DB commit. A failed DB commit
+                # may leave an unreferenced artifact; GET never discovers files by scanning.
+                self._artifact_store.put(metadata.id, content)
             saved = uow.orders.add_export(metadata)
             result = ExportedOrder(metadata=saved, content=content)
             uow.commit()
