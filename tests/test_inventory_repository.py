@@ -12,16 +12,18 @@ from backend.domain.entities.imports import (
     InTransitItem,
     StockoutPeriod,
 )
-from backend.domain.enums import StockoutSource, TransitStatus
+from backend.domain.enums import ImportSourceType, ImportStatus, StockoutSource, TransitStatus, UserRole
 from backend.infrastructure.persistence.inventory_repository import (
     SqlAlchemyInventoryRepository,
 )
 from backend.infrastructure.persistence.models.base import Base
 from backend.infrastructure.persistence.models.imports import (
+    ImportBatchModel,
     InventorySnapshotModel,
     InTransitItemModel,
     StockoutPeriodModel,
 )
+from backend.infrastructure.persistence.models.catalog import UserModel
 
 
 class InventoryRepositoryTests(unittest.TestCase):
@@ -35,6 +37,8 @@ class InventoryRepositoryTests(unittest.TestCase):
         Base.metadata.create_all(
             self.engine,
             tables=[
+                UserModel.__table__,
+                ImportBatchModel.__table__,
                 InventorySnapshotModel.__table__,
                 StockoutPeriodModel.__table__,
                 InTransitItemModel.__table__,
@@ -50,6 +54,17 @@ class InventoryRepositoryTests(unittest.TestCase):
         self.warehouse_id = uuid4()
         self.supplier_id = uuid4()
         self.now = datetime(2026, 9, 23, 12, tzinfo=timezone.utc)
+        # Calculation reads require a completed import, not an orphan batch UUID.
+        with self.sessions.begin() as session:
+            user_id = uuid4()
+            session.add(UserModel(id=user_id, external_id="inventory-test", display_name="Test",
+                                  role=UserRole.BUYER, created_at=self.now))
+            session.flush()
+            session.add(ImportBatchModel(
+                id=self.import_batch_id, source_type=ImportSourceType.INVENTORY,
+                status=ImportStatus.COMPLETED, file_name="synthetic.xlsx", file_checksum="a" * 64,
+                imported_by=user_id, imported_at=self.now,
+            ))
 
     @staticmethod
     def repository(session: Session) -> SqlAlchemyInventoryRepository:

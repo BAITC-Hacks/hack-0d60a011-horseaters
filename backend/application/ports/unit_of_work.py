@@ -4,6 +4,11 @@ from typing import Protocol, Self
 
 from backend.domain.repositories.import_repository import ImportRepository
 from backend.domain.repositories.inventory_repository import InventoryRepository
+from backend.domain.repositories.material_requirement_repository import MaterialRequirementRepository
+from backend.domain.repositories.product_repository import ProductRepository
+from backend.domain.repositories.sales_repository import SalesRepository
+from backend.domain.repositories.seasonality_repository import SeasonalityRepository
+from backend.domain.repositories.supplier_repository import SupplierRepository
 from backend.domain.repositories.order_repository import OrderRepository
 
 
@@ -18,13 +23,22 @@ class UnitOfWork(Protocol):
     def imports(self) -> ImportRepository: ...
 
     @property
-    def sales(self) -> Repository: ...
+    def sales(self) -> SalesRepository: ...
 
     @property
     def inventory(self) -> InventoryRepository: ...
 
     @property
-    def suppliers(self) -> Repository: ...
+    def suppliers(self) -> SupplierRepository: ...
+
+    @property
+    def products(self) -> ProductRepository: ...
+
+    @property
+    def seasonality(self) -> SeasonalityRepository: ...
+
+    @property
+    def material_requirements(self) -> MaterialRequirementRepository: ...
 
     @property
     def calculation_runs(self) -> Repository: ...
