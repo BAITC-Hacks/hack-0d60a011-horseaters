@@ -52,7 +52,7 @@ class MigrationPostgresTests(unittest.TestCase):
                     if not index.get("duplicates_constraint")
                 }
                 self.assertEqual(actual_indexes, expected_indexes, table.name)
-            self.assertEqual(connection.scalar(sa.text("SELECT version_num FROM alembic_version")), "0001")
+            self.assertEqual(connection.scalar(sa.text("SELECT version_num FROM alembic_version")), "0002")
 
     def assert_partial_uniqueness(self, engine):
         with engine.connect() as connection:
@@ -119,7 +119,7 @@ class MigrationPostgresTests(unittest.TestCase):
             self.run_alembic(url_text, "upgrade", "head")
             self.assert_schema_matches(engine)
             self.assert_partial_uniqueness(engine)
-            print("DB-03: upgrade head OK; 24 tables, constraints and indexes verified")
+            print("DB-03: upgrade head OK; 25 tables, constraints and indexes verified")
             self.run_alembic(url_text, "downgrade", "base")
             with engine.connect() as connection:
                 self.assertEqual(sa.inspect(connection).get_table_names(), ["alembic_version"])

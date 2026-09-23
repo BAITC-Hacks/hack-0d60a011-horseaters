@@ -5,6 +5,7 @@ from .catalog import (
     SupplierModel,
     SupplierProductModel,
     UserModel,
+    UserCredentialModel,
     WarehouseModel,
 )
 from .imports import (
@@ -48,6 +49,7 @@ __all__ = [
     "SupplierModel",
     "SupplierProductModel",
     "UserModel",
+    "UserCredentialModel",
     "WarehouseModel",
     "CalculationRunImportModel",
     "CalculationRunModel",

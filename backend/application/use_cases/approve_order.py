@@ -11,7 +11,7 @@ class ApproveOrder:
         self._uow_factory = uow_factory
 
     def execute(self, order_id: UUID, *, user_id: UUID) -> PurchaseOrder:
-        """Caller supplies an authenticated/authorized actor; no auth service exists yet."""
+        """Caller supplies an authenticated admin; HTTP layer enforces the role."""
         with self._uow_factory() as uow:
             order = uow.orders.get(order_id)
             if order is None:

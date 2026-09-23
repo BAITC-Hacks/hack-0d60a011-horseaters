@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -11,11 +12,13 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    DateTime,
     UniqueConstraint,
     Uuid,
     false,
     text,
     true,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +42,18 @@ class UserModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+
+
+class UserCredentialModel(Base):
+    __tablename__ = "user_credentials"
+    __table_args__ = (CheckConstraint("token_version > 0", name="positive_token_version"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CategoryModel(UUIDPrimaryKeyMixin, Base):

@@ -33,7 +33,7 @@ def get_order(order_id: UUID, use_case: GetOrder = Depends(deps.get_order)):
 
 @router.post("/{order_id}/approve", response_model=OrderResponse)
 def approve_order(order_id: UUID, body: RequestModel | None = Body(default=None),
-                  user: User = Depends(deps.require_writer), use_case: ApproveOrder = Depends(deps.get_approve_order)):
+                  user: User = Depends(deps.require_admin), use_case: ApproveOrder = Depends(deps.get_approve_order)):
     return OrderResponse.model_validate(invoke(use_case.execute, order_id, user_id=user.id))
 
 

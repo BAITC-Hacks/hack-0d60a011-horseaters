@@ -6,6 +6,13 @@ This file is the source of truth for AI agents and developers changing the front
 
 Stockwise is a procurement workspace for reviewing replenishment recommendations, correcting quantities, approving orders, and exporting data for 1C. The primary user is a procurement manager.
 
+## Authentication and authorization (backend contract)
+
+- Employees sign in with `POST /api/auth/login` (`username`, `password`) and receive a short-lived bearer JWT (`access_token`, `token_type`, `expires_in`). Send `Authorization: Bearer <token>` on business API requests, including legacy `/api/v1/procurement` and `/api/v1/ai` routes. Do not infer identity from an arbitrary user-ID header or hard-code tokens in the frontend.
+- `GET /api/auth/me` returns `id`, `username`, `display_name`, `role`. Roles are `buyer` and `admin` for newly provisioned accounts. A buyer prepares, adjusts, accepts, creates and exports; an admin reviews and approves orders via `POST /api/orders/{order_id}/approve` but cannot perform buyer-only mutations.
+- Admins provision buyers through `POST /api/auth/users`; there is no public signup or password-change endpoint. On 401, clear the session and ask the user to log in; on 403, show insufficient permissions. Keep tokens out of query strings, logs and durable browser storage.
+- The XLSX download is available only after approval. `docs/excel-order-export.md` documents the MVP's own 1C import template; it is not a promise of automatic compatibility with every 1C configuration.
+
 - Next.js App Router and React Server Components at route boundaries.
 - TypeScript in strict mode.
 - Tailwind CSS with semantic theme tokens.

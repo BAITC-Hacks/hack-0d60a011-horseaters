@@ -6,6 +6,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.infrastructure.api.main import create_app
+from backend.infrastructure.api.dependencies import get_current_user
+from backend.domain.entities.catalog import User
+from backend.domain.enums import UserRole
 from backend.infrastructure.config.settings import Settings
 from backend.infrastructure.persistence.database import Database
 
@@ -20,6 +23,9 @@ class ProcurementRouterTests(unittest.TestCase):
         self.database = Database(f"sqlite:///{sqlite_path}")
         self.addCleanup(self.database.dispose)
         self.app = create_app(Settings(database_url=POSTGRES_URL, _env_file=None))
+        self.app.dependency_overrides[get_current_user] = lambda: User(
+            external_id="procurement-test", display_name="Buyer", role=UserRole.BUYER,
+        )
 
     def test_list_recommendations(self):
         with patch(

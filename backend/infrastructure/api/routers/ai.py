@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from backend.infrastructure.api import dependencies as deps
 
 from backend.infrastructure.ai.schemas import (
     SkuAnalysisRequest,
@@ -13,7 +14,8 @@ from backend.infrastructure.ai.schemas import (
 from backend.infrastructure.ai.service import AiProcurementService, get_ai_service
 from backend.infrastructure.config.settings import Settings
 
-router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
+router = APIRouter(prefix="/api/v1/ai", tags=["ai"],
+                   dependencies=[Depends(deps.get_current_user)])
 
 
 def get_service_dep(request: Request) -> AiProcurementService:

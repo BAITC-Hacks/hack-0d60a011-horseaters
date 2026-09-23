@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field
+from backend.infrastructure.api import dependencies as deps
 
-router = APIRouter(prefix="/api/v1/procurement", tags=["procurement"])
+router = APIRouter(prefix="/api/v1/procurement", tags=["procurement"],
+                   dependencies=[Depends(deps.get_current_user)])
 
 
 class ProcurementItem(BaseModel):
@@ -329,6 +331,7 @@ async def get_procurement_recommendation(
 async def update_procurement_recommendation(
     item_id: str = Path(..., description="ID позиции или артикул"),
     update: ProcurementUpdateRequest = ...,
+    _buyer=Depends(deps.require_writer),
 ) -> ProcurementItem:
     """
     Корректировка объема закупки менеджером.

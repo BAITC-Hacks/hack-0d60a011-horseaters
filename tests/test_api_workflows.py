@@ -213,6 +213,8 @@ class WorkflowApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/api/orders/{self.order.id}").json()["items"][0]["approved_quantity"], "10")
         self.order.approve(approved_by=self.user.id)
         self.mocks["approve_order"].execute.return_value = self.order
+        self.assertEqual(self.client.post(f"/api/orders/{self.order.id}/approve").status_code, 403)
+        self.user = replace(self.user, role=UserRole.ADMIN)
         self.assertEqual(self.client.post(f"/api/orders/{self.order.id}/approve").status_code, 200)
         self.mocks["approve_order"].execute.assert_called_once_with(self.order.id, user_id=self.user.id)
         self.assertEqual(self.client.post(f"/api/orders/{self.order.id}/approve", json={"approved_by": str(uuid4())}).status_code, 422)
@@ -261,7 +263,7 @@ class WorkflowApiTests(unittest.TestCase):
         self.assertTrue(all(response.status_code == 403 for response in responses))
         self.user = None
         response = self.client.get(f"/api/orders/{self.order.id}", headers={"X-User-ID": str(uuid4())})
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
         self.user = User(external_id="disabled", display_name="Disabled", role=UserRole.ADMIN, is_active=False)
         self.assertEqual(self.client.get(f"/api/orders/{self.order.id}").status_code, 403)
 

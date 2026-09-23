@@ -1,4 +1,6 @@
 from collections.abc import Iterator
+from datetime import timezone
+import jwt
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -27,6 +29,8 @@ from backend.infrastructure.excel.artifact_store import FileExportArtifactStore
 from backend.infrastructure.excel.exporter import XlsxOrderExporter
 from backend.infrastructure.excel.readers import ExcelImportReader
 from backend.infrastructure.persistence.import_gateway import SqlAlchemyImportGateway
+from backend.infrastructure.auth_security import decode_access_token
+from backend.infrastructure.persistence.models.catalog import UserModel, UserCredentialModel
 
 
 def get_db(request: Request) -> Iterator[Session]:
@@ -49,15 +53,44 @@ def get_uow(request: Request) -> Iterator[UnitOfWork]:
 
 
 def get_current_user(request: Request) -> User:
-    """Trusted authentication middleware sets state.user; HTTP headers/body cannot do so."""
+    """Resolve a signed bearer token against live account and credential state."""
     user = getattr(request.state, "user", None)
-    if not isinstance(user, User) or not user.is_active:
+    if isinstance(user, User):
+        if not user.is_active:
+            raise HTTPException(403, detail={"code": "forbidden"})
+        return user
+    unauthorized = HTTPException(401, detail={"code": "unauthorized"}, headers={"WWW-Authenticate": "Bearer"})
+    authorization = request.headers.get("Authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token or " " in token:
+        raise unauthorized
+    settings = request.app.state.settings
+    if settings.jwt_secret is None:
+        raise HTTPException(503, detail={"code": "auth_not_configured"})
+    try:
+        user_id, version = decode_access_token(token, settings.jwt_secret.get_secret_value())
+    except jwt.InvalidTokenError:
+        raise unauthorized from None
+    with request.app.state.database.session() as session:
+        account = session.get(UserModel, user_id)
+        credentials = session.get(UserCredentialModel, user_id)
+        if account is None or credentials is None or not account.is_active or credentials.token_version != version:
+            raise unauthorized
+        created_at = account.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return User(id=account.id, external_id=account.external_id, display_name=account.display_name,
+                    role=account.role, is_active=account.is_active, created_at=created_at)
+
+
+def require_writer(user: User = Depends(get_current_user)) -> User:
+    if not user.is_active or user.role != UserRole.BUYER:
         raise HTTPException(403, detail={"code": "forbidden"})
     return user
 
 
-def require_writer(user: User = Depends(get_current_user)) -> User:
-    if not user.is_active or user.role not in (UserRole.BUYER, UserRole.ADMIN):
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if not user.is_active or user.role != UserRole.ADMIN:
         raise HTTPException(403, detail={"code": "forbidden"})
     return user
 

@@ -43,6 +43,7 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
         self.addCleanup(self.database.dispose)
         Base.metadata.create_all(self.database.engine)
         self.user_id = uuid4()
+        self.auth_role = UserRole.BUYER
         with self.database.session() as session:
             session.add(UserModel(
                 id=self.user_id, external_id="smoke-buyer", display_name="Smoke Buyer",
@@ -56,7 +57,7 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
         self.app = create_app(settings)
         self.app.dependency_overrides[get_current_user] = lambda: User(
             id=self.user_id, external_id="smoke-buyer", display_name="Smoke Buyer",
-            role=UserRole.BUYER,
+            role=self.auth_role,
         )
 
     @staticmethod
@@ -145,9 +146,13 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
             self.assertEqual(client.get(f"/api/orders/{order_id}").status_code, 200)
             self.assertEqual(client.post(f"/api/orders/{order_id}/export").status_code, 409)
 
+            self.assertEqual(client.post(f"/api/orders/{order_id}/approve").status_code, 403)
+            self.auth_role = UserRole.ADMIN
             approved = client.post(f"/api/orders/{order_id}/approve")
             self.assertEqual(approved.status_code, 200, approved.text)
             self.assertEqual(approved.json()["status"], "approved")
+            self.assertEqual(client.post(f"/api/orders/{order_id}/export").status_code, 403)
+            self.auth_role = UserRole.BUYER
             metadata = client.post(f"/api/orders/{order_id}/export")
             self.assertEqual(metadata.status_code, 201, metadata.text)
             download = client.get(f"/api/orders/{order_id}/export")

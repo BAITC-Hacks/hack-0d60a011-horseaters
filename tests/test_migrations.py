@@ -43,9 +43,10 @@ class MigrationStaticTests(unittest.TestCase):
 
     def test_single_initial_revision_and_syntax(self):
         scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-        self.assertEqual(scripts.get_heads(), ["0001"])
+        self.assertEqual(scripts.get_heads(), ["0002"])
         self.assertIsNone(scripts.get_revision("0001").down_revision)
-        self.assertEqual(len(list(scripts.walk_revisions())), 1)
+        self.assertEqual(scripts.get_revision("0002").down_revision, "0001")
+        self.assertEqual(len(list(scripts.walk_revisions())), 2)
         for path in MIGRATIONS.rglob("*.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
@@ -53,7 +54,7 @@ class MigrationStaticTests(unittest.TestCase):
         created = set(re.findall(r"CREATE TABLE (\w+)", self.upgrade_sql))
         dropped = set(re.findall(r"DROP TABLE (\w+)", self.downgrade_sql))
         expected = set(Base.metadata.tables) | {"alembic_version"}
-        self.assertEqual(len(Base.metadata.tables), 24)
+        self.assertEqual(len(Base.metadata.tables), 25)
         self.assertEqual(created, expected)
         self.assertEqual(dropped, set(Base.metadata.tables))
 

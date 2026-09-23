@@ -29,8 +29,8 @@ class ModelContractTests(unittest.TestCase):
     def test_package_import_registers_all_tables_in_fresh_process(self):
         script = (
             "from backend.infrastructure.persistence.models import Base; "
-            "assert len(Base.metadata.tables) == 24, list(Base.metadata.tables); "
-            "assert len(Base.metadata.sorted_tables) == 24"
+            "assert len(Base.metadata.tables) == 25, list(Base.metadata.tables); "
+            "assert len(Base.metadata.sorted_tables) == 25"
         )
         result = subprocess.run(
             [sys.executable, "-B", "-c", script],
