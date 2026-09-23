@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+
+html { color-scheme: light; }
+body { margin: 0; }
+button, input, select { font: inherit; }
