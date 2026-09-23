@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
-import { QueryProvider } from "@/app/providers";
+import { AppProvider } from "@/app/providers";
 import "@/app/styles/globals.css";
+
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyrillic"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "cyrillic"] });
 
 export const metadata: Metadata = {
   title: "Stockwise — управление запасами",
@@ -10,9 +14,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ru">
-      <body className="bg-[#f7f8fa] font-sans text-[#182125] antialiased">
-        <QueryProvider>{children}</QueryProvider>
+    <html lang="ru" suppressHydrationWarning>
+      <body className={`${geistSans.variable} ${geistMono.variable} bg-background font-sans text-foreground antialiased`}>
+        <AppProvider>{children}</AppProvider>
       </body>
     </html>
   );
