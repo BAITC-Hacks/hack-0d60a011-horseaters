@@ -36,7 +36,7 @@ class RepositoryFactories:
     products: RepositoryFactory | None = None
     seasonality: RepositoryFactory | None = None
     material_requirements: RepositoryFactory | None = None
-    warehouses: RepositoryFactory | None = None
+    warehouses: Callable[[Session], WarehouseRepository] | None = None
 
     def as_dict(self) -> dict[str, RepositoryFactory]:
         factories = {

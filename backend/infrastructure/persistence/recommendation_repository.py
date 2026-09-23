@@ -1,16 +1,33 @@
 from __future__ import annotations
 
-from datetime import timezone
+from dataclasses import fields
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.domain.entities.enums import RecommendationStatus, Urgency
-from backend.domain.entities.recommendation import Recommendation
+from backend.domain.entities.recommendation import Recommendation, RecommendationAdjustment
+from backend.domain.repositories.recommendation_repository import RecommendationConflictError
 from backend.infrastructure.persistence.calculation_run_repository import _json
 from backend.infrastructure.persistence.models.calculation import RecommendationModel
 from backend.infrastructure.persistence.models.catalog import ProductModel
+from .models.orders import PurchaseOrderItemModel, RecommendationAdjustmentModel
+
+
+def _entity(model, entity_type):
+    values = {field.name: getattr(model, field.name) for field in fields(entity_type)}
+    for key, value in values.items():
+        if isinstance(value, datetime) and value.utcoffset() is None:
+            values[key] = value.replace(tzinfo=timezone.utc)
+    return entity_type(**values)
+
+
+def _not_ordered():
+    return ~select(PurchaseOrderItemModel.id).where(
+        PurchaseOrderItemModel.recommendation_id == RecommendationModel.id,
+    ).exists()
 
 
 class SqlAlchemyRecommendationRepository:
@@ -112,3 +129,60 @@ class SqlAlchemyRecommendationRepository:
             calculation_details=dict(model.calculation_details),
             version=model.version, created_at=created_at, updated_at=updated_at,
         )
+
+    def list_orderable(self, calculation_run_id: UUID) -> tuple[Recommendation, ...]:
+        rows = self._session.scalars(select(RecommendationModel).where(
+            RecommendationModel.calculation_run_id == calculation_run_id,
+            RecommendationModel.status == RecommendationStatus.ACCEPTED,
+            RecommendationModel.effective_quantity > 0, _not_ordered(),
+        ).order_by(RecommendationModel.id))
+        return tuple(self._to_domain(row) for row in rows)
+
+    def save_adjustment(self, recommendation: Recommendation, adjustment: RecommendationAdjustment,
+                        *, expected_version: int) -> None:
+        if (recommendation.version != expected_version + 1 or
+                recommendation.status is not RecommendationStatus.ADJUSTED or
+                adjustment.recommendation_id != recommendation.id or
+                adjustment.new_quantity != recommendation.effective_quantity or
+                adjustment.changed_at != recommendation.updated_at):
+            raise ValueError("Adjustment does not match the recommendation transition")
+        statement = update(RecommendationModel).where(
+            RecommendationModel.id == recommendation.id,
+            RecommendationModel.version == expected_version,
+            RecommendationModel.effective_quantity == adjustment.previous_quantity,
+            RecommendationModel.status.in_((RecommendationStatus.SUGGESTED,
+                                            RecommendationStatus.ADJUSTED, RecommendationStatus.ACCEPTED)),
+            _not_ordered(),
+        ).values(effective_quantity=recommendation.effective_quantity,
+                 version=RecommendationModel.version + 1, status=RecommendationStatus.ADJUSTED,
+                 updated_at=adjustment.changed_at)
+        self._compare_and_swap(statement, recommendation.id)
+        self._session.add(RecommendationAdjustmentModel(
+            **{field.name: getattr(adjustment, field.name) for field in fields(adjustment)},
+        ))
+        self._session.flush()
+
+    def mark_converted(self, recommendation: Recommendation, *, expected_version: int) -> None:
+        if (recommendation.version != expected_version + 1 or
+                recommendation.status is not RecommendationStatus.CONVERTED_TO_ORDER):
+            raise ValueError("Expected an accepted-to-order domain transition")
+        self._compare_and_swap(update(RecommendationModel).where(
+            RecommendationModel.id == recommendation.id,
+            RecommendationModel.version == expected_version,
+            RecommendationModel.status == RecommendationStatus.ACCEPTED,
+            RecommendationModel.effective_quantity == recommendation.effective_quantity,
+            RecommendationModel.effective_quantity > 0, _not_ordered(),
+        ).values(status=RecommendationStatus.CONVERTED_TO_ORDER,
+                 version=RecommendationModel.version + 1, updated_at=recommendation.updated_at), recommendation.id)
+
+    def _compare_and_swap(self, statement, recommendation_id: UUID) -> None:
+        result = self._session.execute(statement.execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            raise RecommendationConflictError(f"Recommendation {recommendation_id} was changed or ordered")
+        self._session.expire_all()
+
+    def list_adjustments(self, recommendation_id: UUID) -> tuple[RecommendationAdjustment, ...]:
+        rows = self._session.scalars(select(RecommendationAdjustmentModel).where(
+            RecommendationAdjustmentModel.recommendation_id == recommendation_id,
+        ).order_by(RecommendationAdjustmentModel.changed_at, RecommendationAdjustmentModel.id))
+        return tuple(_entity(row, RecommendationAdjustment) for row in rows)
