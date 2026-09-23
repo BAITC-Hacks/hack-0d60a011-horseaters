@@ -1,51 +1,72 @@
-"""Minimal order workbook; the partner-specific 1C template is not specified yet."""
+from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Sequence
 from io import BytesIO
-from uuid import UUID
 
 from openpyxl import Workbook
+from openpyxl.styles import Font
 
-from backend.domain.entities.catalog import Supplier, Warehouse
-from backend.domain.entities.product import Product
-from backend.domain.entities.purchase_order import PurchaseOrder
+from backend.application.dto.order import OrderExportRow
+
+
+ORDER_EXPORT_COLUMNS = (
+    "Номер заказа",
+    "Поставщик",
+    "Склад",
+    "Артикул",
+    "Наименование",
+    "Рекомендованное количество",
+    "Утверждённое количество",
+    "Цена",
+    "Сумма",
+    "Дата поставки",
+)
 
 
 class XlsxOrderExporter:
-    def render(self, order: PurchaseOrder, *, supplier: Supplier, warehouse: Warehouse,
-               products: Mapping[UUID, Product]) -> bytes:
+    """Render the fixed, flat XLSX contract consumed by 1C."""
+
+    def render(self, rows: Sequence[OrderExportRow]) -> bytes:
         workbook = Workbook()
         try:
             sheet = workbook.active
-            sheet.title = "Order"
-            rows = [
-                ["order_number", order.order_number],
-                ["order_id", str(order.id)],
-                ["supplier_code", supplier.code], ["supplier_name", supplier.name],
-                ["warehouse_code", warehouse.code], ["warehouse_name", warehouse.name],
-                ["approved_at", order.approved_at.isoformat() if order.approved_at else ""],
-                [],
-                ["sku", "product_name", "unit", "recommended_quantity", "approved_quantity",
-                 "unit_price", "total_amount", "recommendation_id"],
-            ]
-            for item in order.items:
-                product = products[item.product_id]
-                # Decimal text preserves all 18 digits; Excel numeric cells only preserve 15.
-                rows.append([product.sku, product.name, product.unit,
-                             format(item.recommended_quantity, ".4f"), format(item.approved_quantity, ".4f"),
-                             format(item.unit_price, ".4f") if item.unit_price is not None else "",
-                             format(item.total_amount, ".4f") if item.total_amount is not None else "",
-                             str(item.recommendation_id)])
+            sheet.title = "Заказ"
+            sheet.append(ORDER_EXPORT_COLUMNS)
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+                cell.data_type = "s"
+
             for row in rows:
-                sheet.append(row)
-                for cell in sheet[sheet.max_row]:
-                    if isinstance(cell.value, str):
-                        # Catalog values such as '=...' must stay literal text, never formulas.
-                        cell.data_type = "s"
-            sheet.freeze_panes = "A10"
-            sheet.auto_filter.ref = f"A9:H{sheet.max_row}"
+                sheet.append(
+                    (
+                        row.order_number,
+                        row.supplier_name,
+                        row.warehouse_name,
+                        row.sku,
+                        row.product_name,
+                        row.recommended_quantity,
+                        row.approved_quantity,
+                        row.unit_price,
+                        row.total_amount,
+                        row.delivery_date,
+                    )
+                )
+                for cell in sheet[sheet.max_row][:5]:
+                    # Catalog values such as '=...' stay literal text, never formulas.
+                    cell.data_type = "s"
+                sheet.cell(sheet.max_row, 10).number_format = "dd.mm.yyyy"
+
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            widths = (20, 28, 24, 18, 42, 24, 24, 24, 24, 18)
+            for index, width in enumerate(widths, start=1):
+                sheet.column_dimensions[chr(64 + index)].width = width
+
             with BytesIO() as stream:
                 workbook.save(stream)
                 return stream.getvalue()
         finally:
             workbook.close()
+
+
+OpenpyxlOrderWorkbookExporter = XlsxOrderExporter

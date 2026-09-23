@@ -30,7 +30,7 @@ export function OrderSummary({ items, days }: { items: InventoryItem[]; days: nu
     <div className="p-5">
       <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Итого к заказу</p><p className="mt-2 text-[30px] font-bold tracking-[-0.05em] text-card-foreground">{formatMoney(total)}</p>
       <div className="my-5 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-border bg-card-muted p-3.5"><div className="text-xl font-bold text-card-foreground">{formatNumber(orderItems.length)}</div><div className="mt-1 text-[10px] text-muted-foreground">позиций</div></div><div className="rounded-2xl border border-border bg-card-muted p-3.5"><div className="flex items-center gap-1.5 text-xl font-bold text-card-foreground">{suppliers}<Truck className="h-4 w-4 text-purple-500 dark:text-purple-400" /></div><div className="mt-1 text-[10px] text-muted-foreground">поставщика</div></div></div>
-      
+
       <div className="space-y-2">
         <Button className="w-full" onClick={openLetter} disabled={orderItems.length === 0} variant="secondary">
           <Mail className="h-4 w-4" />Письмо вендору (IEK)
