@@ -8,3 +8,6 @@ __all__ = [
     "UnitOfWork",
     "UnitOfWorkFactory",
 ]
+from .order_export import OrderWorkbookExporter
+
+__all__ = ["OrderWorkbookExporter"]

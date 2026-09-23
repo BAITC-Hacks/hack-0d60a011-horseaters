@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from backend.infrastructure.config.settings import CorsSettings, Settings
 from backend.infrastructure.api.routers.health import router as health_router
 from backend.infrastructure.api.routers.imports import router as imports_router
+from backend.infrastructure.api.routers.orders import router as orders_router
 from backend.infrastructure.api.exceptions import ApiError
 from backend.infrastructure.api.schemas.errors import error_response
 from backend.infrastructure.persistence.database import Database
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(imports_router)
+    app.include_router(orders_router)
 
     # Versioned liveness endpoint used by Docker and orchestration.
     @app.get("/api/v1/health", tags=["system"])
