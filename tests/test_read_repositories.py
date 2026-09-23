@@ -378,6 +378,35 @@ class ReadRepositoryTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.seasonality.list_coefficients(self.product, NOW)
 
+    def test_existing_inventory_read_api_preserves_inclusive_boundaries(self):
+        ended = self.fact(StockoutPeriodModel, started_at=NOW - DAY, ended_at=NOW)
+        started = self.fact(StockoutPeriodModel, started_at=NOW + DAY)
+        self.fact(StockoutPeriodModel, import_batch_id=self.failed)
+        args = dict(started_at=NOW, ended_at=NOW + DAY)
+        positional = self.inventory.list_stockout_periods(self.product, self.warehouse, **args)
+        named = self.inventory.list_stockout_periods(
+            product_id=self.product, warehouse_id=self.warehouse, **args,
+        )
+        self.assertEqual(self.ids(positional), {ended, started})
+        self.assertEqual(self.ids(named), {ended, started})
+        mixed_ids = self.inventory.list_stockout_periods(self.product, warehouse_id=self.warehouse, **args)
+        self.assertEqual(self.ids(mixed_ids), {ended, started})
+        with self.assertRaises(TypeError):
+            self.inventory.list_stockout_periods(NOW, NOW + DAY, **args)
+        with self.assertRaises(TypeError):
+            self.inventory.list_stockout_periods(self.product, self.warehouse, started_at=NOW)
+        with self.assertRaises(TypeError):
+            self.inventory.list_stockout_periods(self.product, self.warehouse, product_id=self.product, **args)
+        at_end = self.fact(InventorySnapshotModel, snapshot_at=NOW + DAY)
+        self.fact(InventorySnapshotModel, snapshot_at=NOW + DAY, import_batch_id=self.processing)
+        self.assertEqual(self.ids(self.inventory.list_snapshots(self.product, self.warehouse, **args)), {at_end})
+        at_eta = self.fact(InTransitItemModel, expected_at=NOW + DAY)
+        unknown = self.fact(InTransitItemModel, expected_at=None)
+        self.fact(InTransitItemModel, expected_at=NOW + DAY, import_batch_id=self.pending)
+        self.assertEqual(self.ids(self.inventory.list_open_in_transit(
+            self.product, self.warehouse, expected_by=NOW + DAY,
+        )), {at_eta, unknown})
+
     def test_uow_injects_same_session_into_all_six_repositories(self):
         self.session.commit()
         unused = lambda session: object()

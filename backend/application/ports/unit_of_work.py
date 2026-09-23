@@ -9,6 +9,7 @@ from backend.domain.repositories.product_repository import ProductRepository
 from backend.domain.repositories.sales_repository import SalesRepository
 from backend.domain.repositories.seasonality_repository import SeasonalityRepository
 from backend.domain.repositories.supplier_repository import SupplierRepository
+from backend.domain.repositories.order_repository import OrderRepository
 
 
 class Repository(Protocol):
@@ -46,7 +47,7 @@ class UnitOfWork(Protocol):
     def recommendations(self) -> Repository: ...
 
     @property
-    def orders(self) -> Repository: ...
+    def orders(self) -> OrderRepository: ...
 
     def __enter__(self) -> Self: ...
 

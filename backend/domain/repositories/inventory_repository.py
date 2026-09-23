@@ -1,4 +1,4 @@
-from collections.abc import Collection
+from collections.abc import Collection, Iterable, Sequence
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
@@ -15,10 +15,18 @@ class InventoryRepository(Protocol):
         ...
 
     def list_stockout_periods(
-        self, start: datetime, end: datetime, *, product_id: UUID | None = None,
+        self, start: datetime | UUID | None = None, end: datetime | UUID | None = None, *,
+        product_id: UUID | None = None,
         warehouse_id: UUID | None = None, import_batch_ids: Collection[UUID] | None = None,
+        started_at: datetime | None = None, ended_at: datetime | None = None,
     ) -> list[StockoutPeriod]:
-        """Intervals [started_at, ended_at) intersecting [start, end), NULL end is open."""
+        """Read completed-import or unbatched stockouts, including open intervals.
+
+        REP-02: (start: datetime, end: datetime, *, product_id=..., warehouse_id=...)
+        uses half-open intervals. Existing API: (product_id, warehouse_id,
+        *, started_at, ended_at) uses inclusive boundaries. Keyword-only IDs also
+        work with started_at/ended_at. Mixing the two forms is rejected.
+        """
         ...
 
     def list_active_in_transit(
@@ -28,3 +36,32 @@ class InventoryRepository(Protocol):
     ) -> list[InTransitItem]:
         """planned/in_transit; expected_at in [from, before), plus NULL if requested."""
         ...
+
+    def add_snapshots(
+        self, snapshots: Iterable[InventorySnapshot]
+    ) -> Sequence[InventorySnapshot]: ...
+
+    def list_snapshots(
+        self,
+        product_id: UUID,
+        warehouse_id: UUID,
+        *,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> Sequence[InventorySnapshot]: ...
+
+    def add_stockout_periods(
+        self, periods: Iterable[StockoutPeriod]
+    ) -> Sequence[StockoutPeriod]: ...
+
+    def add_in_transit_items(
+        self, items: Iterable[InTransitItem]
+    ) -> Sequence[InTransitItem]: ...
+
+    def list_open_in_transit(
+        self,
+        product_id: UUID,
+        warehouse_id: UUID,
+        *,
+        expected_by: datetime | None = None,
+    ) -> Sequence[InTransitItem]: ...

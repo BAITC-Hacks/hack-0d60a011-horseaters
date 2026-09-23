@@ -41,8 +41,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Health check endpoints for Docker & orchestration
-    @app.get("/health", tags=["system"])
+    app.include_router(health_router)
+
+    # Versioned liveness endpoint used by Docker and orchestration.
     @app.get("/api/v1/health", tags=["system"])
     async def health_check():
         return {"status": "ok", "service": "procurement-backend"}

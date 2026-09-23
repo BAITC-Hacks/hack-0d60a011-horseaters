@@ -15,6 +15,7 @@ from backend.domain.repositories.product_repository import ProductRepository
 from backend.domain.repositories.sales_repository import SalesRepository
 from backend.domain.repositories.seasonality_repository import SeasonalityRepository
 from backend.domain.repositories.supplier_repository import SupplierRepository
+from backend.domain.repositories.order_repository import OrderRepository
 
 
 RepositoryFactory = Callable[[Session], Repository]
@@ -24,11 +25,11 @@ RepositoryFactory = Callable[[Session], Repository]
 class RepositoryFactories:
     imports: Callable[[Session], ImportRepository]
     sales: RepositoryFactory
-    inventory: RepositoryFactory
+    inventory: Callable[[Session], InventoryRepository]
     suppliers: RepositoryFactory
     calculation_runs: RepositoryFactory
     recommendations: RepositoryFactory
-    orders: RepositoryFactory
+    orders: Callable[[Session], OrderRepository]
     products: RepositoryFactory | None = None
     seasonality: RepositoryFactory | None = None
     material_requirements: RepositoryFactory | None = None
@@ -100,8 +101,8 @@ class SqlAlchemyUnitOfWork:
         return self._repository("recommendations")
 
     @property
-    def orders(self) -> Repository:
-        return self._repository("orders")
+    def orders(self) -> OrderRepository:
+        return cast(OrderRepository, self._repository("orders"))
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         if self._session is not None:

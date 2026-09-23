@@ -8,7 +8,9 @@ dataclass, а не ORM. `Decimal`, UUID и Enum сохраняются, врем
 соглашению хранения в `database.md`; границы запросов всегда требуют timezone.
 
 Репозитории не создают engine/сессии, не делают commit/rollback/close и отключают
-autoflush на время чтения. Жизненным циклом управляет существующий `get_db` либо
+autoflush на время чтения. Сохранены методы записи складских фактов из `main`:
+`add_snapshots`, `add_stockout_periods`, `add_in_transit_items`. Они выполняют flush,
+но фиксация остаётся у вызывающего кода. Жизненным циклом управляет существующий `get_db` либо
 `SqlAlchemyUnitOfWork`. Например, в infrastructure-коде:
 
 ```python
@@ -46,6 +48,14 @@ Session. Последние три фабрики необязательны д�
 - Stockout: `started_at < end AND (ended_at IS NULL OR ended_at > start)`.
   Касание границы без пересечения исключается. Источники imported/inferred/manual
   возвращаются явно, без выбора приоритетного источника и без объединения интервалов.
+  Сохранён также прежний вызов `list_stockout_periods(product_id, warehouse_id,
+  started_at=..., ended_at=...)`: у него обе границы включены, как в `main`.
+  Идентификаторы допускаются и именованными аргументами. Смешивать два способа
+  задания периода нельзя. Оба варианта исключают незавершённые импорты.
+- Сохранён `list_snapshots(product_id, warehouse_id, started_at=..., ended_at=...)`
+  с включёнными границами и `list_open_in_transit(product_id, warehouse_id,
+  expected_by=...)` с включённой верхней границей и неизвестными датами поступления.
+  Эти запросы также читают только завершённые импорты.
 - Поставки: только `planned` и `in_transit`. Границы `expected_from`/`expected_before`
   необязательны, интервал полуоткрытый. По умолчанию дата должна быть известна;
   `include_undated=True` дополнительно включает записи с NULL независимо от границ.
