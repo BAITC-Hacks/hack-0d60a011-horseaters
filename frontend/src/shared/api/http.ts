@@ -9,9 +9,9 @@ export class ApiError extends Error {
 
 function getApiBaseUrl(): string {
   const raw = typeof window === "undefined"
-    ? process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL
+    ? process.env.INTERNAL_API_URL ?? process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL
     : process.env.NEXT_PUBLIC_API_URL;
-  if (!raw) throw new ApiError(0, "Адрес FastAPI не задан. Укажите SERVER_API_URL и NEXT_PUBLIC_API_URL.");
+  if (!raw) throw new ApiError(0, "Адрес FastAPI не задан. Укажите INTERNAL_API_URL или NEXT_PUBLIC_API_URL.");
   return raw.replace(/\/$/, "");
 }
 
@@ -21,8 +21,14 @@ export async function apiRequest<T>(
   init?: RequestInit,
 ): Promise<T> {
   let response: Response;
+  const baseUrl = getApiBaseUrl();
+  const normalizedPath = baseUrl.endsWith("/api/v1") && path.startsWith("/api/v1")
+    ? path.slice("/api/v1".length)
+    : path;
+  const url = `${baseUrl}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
+
   try {
-    response = await fetch(`${getApiBaseUrl()}${path}`, {
+    response = await fetch(url, {
       ...init,
       headers: { "Content-Type": "application/json", ...init?.headers },
       cache: "no-store",

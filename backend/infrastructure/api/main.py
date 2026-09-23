@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.infrastructure.config.settings import Settings
 from backend.infrastructure.api.routers.health import router as health_router
@@ -19,9 +21,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             database.dispose()
 
-    application = FastAPI(title="Warehouse replenishment", lifespan=lifespan)
-    application.include_router(health_router)
-    return application
+    app = FastAPI(title="Warehouse replenishment", lifespan=lifespan)
+
+    # Configure CORS for frontend access
+    cors_origins_env = os.getenv(
+        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    )
+    cors_origins = [
+        origin.strip() for origin in cors_origins_env.split(",") if origin.strip()
+    ]
+    if not cors_origins:
+        cors_origins = ["*"]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Health check endpoints for Docker & orchestration
+    @app.get("/health", tags=["system"])
+    @app.get("/api/v1/health", tags=["system"])
+    async def health_check():
+        return {"status": "ok", "service": "procurement-backend"}
+
+    return app
 
 
 app = create_app()
