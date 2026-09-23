@@ -27,6 +27,10 @@ class Database:
         self.engine = create_database_engine(url, echo=echo)
         self._sessions = create_session_factory(self.engine)
 
+    @property
+    def session_factory(self) -> sessionmaker[Session]:
+        return self._sessions
+
     def check_connection(self) -> None:
         """Execute a read-only readiness probe."""
         try:
