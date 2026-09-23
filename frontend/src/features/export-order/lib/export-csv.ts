@@ -4,9 +4,9 @@ function cell(value: string | number): string {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
-export function exportOrderCsv(items: InventoryItem[]): number {
+export function exportOrderCsv(items: InventoryItem[], quantityById: Record<string, number> = {}): number {
   const rows = items
-    .map((item) => ({ item, quantity: getSuggestedQuantity(item) }))
+    .map((item) => ({ item, quantity: quantityById[item.id] ?? getSuggestedQuantity(item) }))
     .filter(({ quantity }) => quantity > 0);
   if (rows.length === 0) return 0;
 
