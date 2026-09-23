@@ -12,6 +12,7 @@ from backend.domain.entities.detected_anomaly import DetectedAnomaly
 from backend.domain.entities.recommendation import Recommendation
 from backend.domain.services.forecasting import calculate_demand_forecast
 from backend.domain.services.recommendation import build_recommendation
+from backend.domain.value_objects.demand import DemandSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,7 @@ class CalculationPipeline:
         start = run.source_cutoff_at - timedelta(days=365)
         end = run.source_cutoff_at
         batch_ids = run.import_batch_ids
+        demand_source = DemandSource(run.parameters["demand_source"])
         products = uow.products.list_products(category_id=run.category_id) if run.category_id else uow.products.list_products()
         warehouses = [run.warehouse_id] if run.warehouse_id else uow.warehouses.list_active_ids()
         anomalies: list[DetectedAnomaly] = []
@@ -69,7 +71,7 @@ class CalculationPipeline:
                 transactions = uow.sales.list_transactions(
                     start, end, product_id=product.id, warehouse_id=warehouse_id,
                     import_batch_ids=batch_ids,
-                )
+                ) if demand_source is DemandSource.TRANSACTIONS else []
                 sales = [item for item in transactions if item.quantity > 0]
                 returns = [item for item in transactions if item.quantity < 0]
                 raw_total = sum((item.quantity for item in sales), Decimal("0"))
@@ -92,8 +94,8 @@ class CalculationPipeline:
                                 threshold=threshold,
                                 reason="Разовая крупная отгрузка исключена из регулярного спроса",
                             ))
-                monthly_source = False
-                if not transactions:
+                monthly_source = demand_source is DemandSource.MONTHLY_SALES
+                if monthly_source:
                     monthly = uow.sales.list_monthly_sales(
                         start.date(), (end - timedelta(days=1)).date(),
                         product_id=product.id, warehouse_id=warehouse_id,
@@ -102,7 +104,6 @@ class CalculationPipeline:
                     if monthly:
                         raw_total = sum((max(Decimal("0"), item.quantity) for item in monthly), Decimal("0"))
                         return_total = sum((min(Decimal("0"), item.quantity) for item in monthly), Decimal("0"))
-                        monthly_source = True
                 if raw_total == 0 and return_total == 0:
                     continue
 

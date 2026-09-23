@@ -36,6 +36,7 @@ class Settings(CorsSettings):
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 15.0
     ai_cache_ttl_seconds: int = 300
+    order_export_directory: Path = PROJECT_ROOT / "var" / "order-exports"
 
     @model_validator(mode="before")
     @classmethod

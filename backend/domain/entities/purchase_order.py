@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from .enums import PurchaseOrderStatus
 from backend.domain.value_objects.quantity import validate_quantity
+from backend.domain.errors import InvalidEntityStateError
 
 
 def utc_now() -> datetime:
@@ -73,9 +74,9 @@ class PurchaseOrder:
 
     def approve(self, *, approved_by: UUID, approved_at: datetime | None = None) -> None:
         if self.status is not PurchaseOrderStatus.DRAFT:
-            raise ValueError("only a draft order can be approved")
+            raise InvalidEntityStateError("only a draft order can be approved")
         if not self.items:
-            raise ValueError("empty order cannot be approved")
+            raise InvalidEntityStateError("empty order cannot be approved")
         for item in self.items:
             validate_quantity(item.approved_quantity, "approved_quantity", positive=True)
         if not isinstance(approved_by, UUID):
@@ -90,7 +91,7 @@ class PurchaseOrder:
 
     def mark_exported(self, *, exported_at: datetime | None = None) -> None:
         if self.status is not PurchaseOrderStatus.APPROVED:
-            raise ValueError("only an approved order can be exported")
+            raise InvalidEntityStateError("only an approved order can be exported")
         export_time = exported_at or utc_now()
         self._require_aware(export_time, "exported_at")
         if self.approved_at is not None and export_time < self.approved_at:

@@ -6,6 +6,7 @@ from backend.application.dto.calculation import RunCalculationCommand
 from backend.application.ports.unit_of_work import UnitOfWorkFactory
 from backend.application.services.calculation_pipeline import CalculationPipeline
 from backend.domain.entities.calculation_run import CalculationRun
+from backend.domain.value_objects.demand import DemandSource
 
 
 class RunCalculation:
@@ -19,6 +20,8 @@ class RunCalculation:
         self._algorithm_version = algorithm_version
 
     def execute(self, command: RunCalculationCommand) -> CalculationRun:
+        if not isinstance(command.demand_source, DemandSource):
+            raise ValueError("demand_source must be explicit and supported")
         if command.horizon_days <= 0:
             raise ValueError("horizon_days must be positive")
         run = CalculationRun(
@@ -27,6 +30,7 @@ class RunCalculation:
             source_cutoff_at=datetime.now(timezone.utc),
             algorithm_version=self._algorithm_version,
             parameters={"horizon_days": command.horizon_days,
+                        "demand_source": command.demand_source.value,
                         "warehouse_id": str(command.warehouse_id) if command.warehouse_id else None,
                         "category_id": str(command.category_id) if command.category_id else None},
             warehouse_id=command.warehouse_id,

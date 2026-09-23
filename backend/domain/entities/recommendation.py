@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from .enums import RecommendationStatus, Urgency
 from backend.domain.value_objects.quantity import validate_quantity
+from backend.domain.errors import InvalidEntityStateError
 
 
 def utc_now() -> datetime:
@@ -108,7 +109,7 @@ class Recommendation:
             RecommendationStatus.REJECTED,
             RecommendationStatus.CONVERTED_TO_ORDER,
         }:
-            raise ValueError("closed recommendation cannot be adjusted")
+            raise InvalidEntityStateError("closed recommendation cannot be adjusted")
         adjustment = RecommendationAdjustment(
             recommendation_id=self.id,
             previous_quantity=self.effective_quantity,

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from openpyxl import load_workbook
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +24,11 @@ from backend.application.use_cases.adjust_recommendation import AdjustRecommenda
 from backend.application.use_cases.approve_order import ApproveOrder
 from backend.application.use_cases.create_orders import CreateOrders
 from backend.application.use_cases.export_order import ExportOrder
+from backend.application.ports.export_artifacts import ExportArtifactUnavailableError
+from backend.domain.entities.catalog import User
+from backend.infrastructure.api import dependencies as api_deps
+from backend.infrastructure.api.main import create_app
+from backend.infrastructure.excel.artifact_store import FileExportArtifactStore
 from backend.domain.entities.enums import CalculationRunStatus, PurchaseOrderStatus, RecommendationStatus, Urgency
 from backend.domain.entities.purchase_order import PurchaseOrder, PurchaseOrderItem
 from backend.domain.enums import UserRole
@@ -433,6 +439,79 @@ class OrderUseCaseTests(unittest.TestCase):
         )
         result = subprocess.run([sys.executable, "-B", "-S", "-c", script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def export_http_client(self, store):
+        app = create_app()
+        app.dependency_overrides[api_deps.get_current_user] = lambda: User(
+            id=self.user, external_id="verified", display_name="Buyer", role=UserRole.BUYER,
+        )
+        app.dependency_overrides[api_deps.get_uow_factory] = lambda: self.uow
+        app.dependency_overrides[api_deps.get_artifact_store] = lambda: store
+        client = TestClient(app, raise_server_exceptions=False)
+        self.addCleanup(client.close)
+        return client
+
+    def test_http_export_persists_file_and_get_is_read_only_after_restart(self):
+        order = self.approved()
+        with tempfile.TemporaryDirectory() as directory:
+            store = FileExportArtifactStore(Path(directory))
+            client = self.export_http_client(store)
+            path = f"/api/orders/{order.id}/export"
+            self.assertEqual(client.get(path).status_code, 404)
+            response = client.post(path)
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(client.post(path).status_code, 409)
+            # A new store/client can download the existing artifact without regeneration.
+            client = self.export_http_client(FileExportArtifactStore(Path(directory)))
+            before = self.load_order(order.id)
+            with patch.object(SqlAlchemyUnitOfWork, "commit", side_effect=AssertionError("GET must not commit")):
+                first = client.get(path)
+                second = client.get(path)
+            self.assertEqual(first.status_code, 200, first.text[:100])
+            self.assertEqual(first.content, second.content)
+            self.assertEqual(hashlib.sha256(first.content).hexdigest(), response.json()["file_checksum"])
+            self.assertEqual(self.count(OrderExportModel), 1)
+            self.assertEqual(self.load_order(order.id).exported_at, before.exported_at)
+            artifact = next(Path(directory).glob("*.xlsx"))
+            artifact.write_bytes(b"corrupt")
+            self.assertEqual(client.get(path).status_code, 503)
+            artifact.unlink()
+            self.assertEqual(client.get(path).status_code, 503)
+
+    def test_http_export_storage_failure_preserves_approval(self):
+        order = self.approved()
+        with tempfile.TemporaryDirectory() as directory:
+            store = FileExportArtifactStore(Path(directory))
+            client = self.export_http_client(store)
+            with patch.object(store, "put", side_effect=ExportArtifactUnavailableError("private path")):
+                response = client.post(f"/api/orders/{order.id}/export")
+            self.assertEqual(response.status_code, 503)
+            self.assertNotIn("private", response.text)
+        self.assertEqual(self.load_order(order.id).status, PurchaseOrderStatus.APPROVED)
+        self.assertEqual(self.count(OrderExportModel), 0)
+
+    def test_artifact_store_never_overwrites_existing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FileExportArtifactStore(Path(directory))
+            key = uuid4()
+            store.put(key, b"first")
+            with self.assertRaises(ExportArtifactUnavailableError):
+                store.put(key, b"second")
+            self.assertEqual(store.read(key), b"first")
+
+    def test_failed_export_commit_does_not_publish_unreferenced_file(self):
+        order = self.approved()
+        with tempfile.TemporaryDirectory() as directory:
+            client = self.export_http_client(FileExportArtifactStore(Path(directory)))
+            path = f"/api/orders/{order.id}/export"
+            with patch.object(Session, "commit", side_effect=RuntimeError("commit unavailable")):
+                response = client.post(path)
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(self.load_order(order.id).status, PurchaseOrderStatus.APPROVED)
+            self.assertEqual(self.count(OrderExportModel), 0)
+            self.assertEqual(client.get(path).status_code, 404)
+            self.assertEqual(len(list(Path(directory).glob("*.xlsx"))), 1)
+            self.assertEqual(client.post(path).status_code, 201)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, event
 
@@ -18,6 +19,9 @@ from backend.infrastructure.persistence.models import (
     SupplierProductModel, UserModel, WarehouseModel,
 )
 from backend.infrastructure.persistence.application_uow import create_application_uow_factory
+from backend.infrastructure.persistence.sales_repository import SqlAlchemySalesRepository
+from backend.infrastructure.persistence.models import MonthlySalesModel
+from backend.domain.value_objects.demand import DemandSource
 
 
 class CalculationApplicationTests(unittest.TestCase):
@@ -116,3 +120,38 @@ class CalculationApplicationTests(unittest.TestCase):
         ))
         self.assertEqual(run.status, CalculationRunStatus.FAILED)
         self.assertEqual(GetCalculationRun(self.factory).execute(run.id).recommendation_count, 0)
+
+    def test_explicit_source_is_recorded_and_other_source_is_never_queried(self):
+        batch = uuid4()
+        with self.sessions.begin() as session:
+            session.add(ImportBatchModel(id=batch, source_type=ImportSourceType.MONTHLY_SALES,
+                                        file_name="monthly.xlsx", file_checksum=uuid4().hex,
+                                        status=ImportStatus.COMPLETED, imported_by=self.user,
+                                        imported_at=self.now - timedelta(days=1)))
+            session.flush()
+            session.add(MonthlySalesModel(import_batch_id=batch, source_row_number=1, product_id=self.product,
+                                          warehouse_id=self.warehouse, quantity=Decimal(365),
+                                          period_start=(self.now - timedelta(days=60)).date(),
+                                          period_end=(self.now - timedelta(days=30)).date()))
+        with patch.object(SqlAlchemySalesRepository, "list_monthly_sales", side_effect=AssertionError("wrong source")):
+            transactions = RunCalculation(self.factory).execute(RunCalculationCommand(
+                user_id=self.user, warehouse_id=self.warehouse, horizon_days=30,
+                demand_source=DemandSource.TRANSACTIONS,
+            ))
+        self.assertEqual(transactions.parameters["demand_source"], "transactions")
+        with patch.object(SqlAlchemySalesRepository, "list_transactions", side_effect=AssertionError("wrong source")):
+            monthly = RunCalculation(self.factory).execute(RunCalculationCommand(
+                user_id=self.user, warehouse_id=self.warehouse, horizon_days=30,
+                demand_source=DemandSource.MONTHLY_SALES,
+            ))
+        self.assertEqual(monthly.parameters["demand_source"], "monthly_sales")
+        with self.factory() as uow:
+            forecast = uow.calculation_runs.get_forecast(monthly.id, self.product, self.warehouse)
+        self.assertEqual(forecast.raw_demand, Decimal(30))
+        with patch.object(SqlAlchemySalesRepository, "list_transactions", return_value=[]), \
+                patch.object(SqlAlchemySalesRepository, "list_monthly_sales", side_effect=AssertionError("implicit fallback")):
+            empty = RunCalculation(self.factory).execute(RunCalculationCommand(
+                user_id=self.user, warehouse_id=self.warehouse, horizon_days=30,
+                demand_source=DemandSource.TRANSACTIONS,
+            ))
+        self.assertEqual(GetCalculationRun(self.factory).execute(empty.id).recommendation_count, 0)
