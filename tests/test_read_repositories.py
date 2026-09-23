@@ -14,6 +14,9 @@ from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
+from backend.application.use_cases.prepare_demand import PrepareDemand
+from backend.domain.entities.calculation_run import CalculationRun
+
 from backend.domain.entities.imports import MonthlySales, SalesTransaction
 from backend.domain.enums import (
     GrowthSource, ImportSourceType, ImportStatus, MaterialRequirementStatus,
@@ -22,6 +25,7 @@ from backend.domain.enums import (
 from backend.domain.repositories.filters import AmbiguousSourceDataError
 from backend.infrastructure.persistence.database import create_session_factory
 from backend.infrastructure.persistence.inventory_repository import SqlAlchemyInventoryRepository
+from backend.infrastructure.persistence.import_repository import SqlAlchemyImportRepository
 from backend.infrastructure.persistence.material_requirement_repository import SqlAlchemyMaterialRequirementRepository
 from backend.infrastructure.persistence.models import (
     Base, CategoryModel, GrowthAssumptionModel, ImportBatchModel, InTransitItemModel,
@@ -430,6 +434,70 @@ class ReadRepositoryTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-B", "-S", "-c", code], cwd=ROOT,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_linked_return_queries_honor_cutoff_import_whitelist_and_empty_ids(self):
+        sale = self.fact(SalesTransactionModel, sold_at=NOW - 40 * DAY)
+        included = self.fact(SalesTransactionModel, transaction_type=TransactionType.RETURN,
+                             quantity=Decimal("-1"), original_transaction_id=sale)
+        self.fact(SalesTransactionModel, transaction_type=TransactionType.RETURN, quantity=Decimal("-1"),
+                  original_transaction_id=sale, sold_at=NOW + DAY)
+        self.fact(SalesTransactionModel, transaction_type=TransactionType.RETURN, quantity=Decimal("-1"),
+                  original_transaction_id=sale, import_batch_id=self.failed)
+        batches = [self.batches[ImportSourceType.SALES]]
+        self.assertEqual(self.ids(self.sales.list_returns_for_sales([sale], as_of=NOW, import_batch_ids=batches)), {included})
+        self.assertEqual(self.ids(self.sales.get_transactions_by_ids([sale], as_of=NOW, import_batch_ids=batches)), {sale})
+        self.assertEqual(self.sales.list_returns_for_sales([], as_of=NOW), [])
+        self.assertEqual(self.sales.get_transactions_by_ids([sale], as_of=NOW, import_batch_ids=[]), [])
+        inventory = self.fact(InventorySnapshotModel)
+        self.fact(InventorySnapshotModel, import_batch_id=self.failed)
+        self.assertEqual(self.ids(self.inventory.list_snapshots(
+            self.product, self.warehouse, started_at=NOW, ended_at=NOW,
+            import_batch_ids=[self.batches[ImportSourceType.INVENTORY]],
+        )), {inventory})
+
+    def test_prepare_demand_use_case_loads_late_returns_and_only_selected_source(self):
+        sale = self.fact(SalesTransactionModel, sold_at=datetime(2026, 8, 10, tzinfo=timezone.utc), quantity=Decimal("10"))
+        self.fact(SalesTransactionModel, sold_at=NOW, original_transaction_id=sale,
+                  transaction_type=TransactionType.RETURN, quantity=Decimal("-4"))
+        self.fact(SalesTransactionModel, sold_at=NOW + DAY, original_transaction_id=sale,
+                  transaction_type=TransactionType.RETURN, quantity=Decimal("-2"))
+        old = self.fact(SalesTransactionModel, sold_at=datetime(2026, 7, 1, tzinfo=timezone.utc), quantity=Decimal("8"))
+        self.fact(SalesTransactionModel, sold_at=datetime(2026, 8, 20, tzinfo=timezone.utc), original_transaction_id=old,
+                  transaction_type=TransactionType.RETURN, quantity=Decimal("-3"))
+        self.fact(MonthlySalesModel, period_start=date(2026, 8, 1), period_end=date(2026, 8, 31), quantity=Decimal("999"))
+        assumption = self.fact(GrowthAssumptionModel, source=GrowthSource.MANUAL, import_batch_id=None)
+        self.session.commit()
+        unused = lambda session: object()
+        factories = RepositoryFactories(
+            imports=SqlAlchemyImportRepository, orders=unused, recommendations=unused, calculation_runs=unused,
+            sales=SqlAlchemySalesRepository, inventory=SqlAlchemyInventoryRepository,
+            suppliers=SqlAlchemySupplierRepository, products=SqlAlchemyProductRepository,
+            seasonality=SqlAlchemySeasonalityRepository,
+        )
+        use_case = PrepareDemand(lambda: SqlAlchemyUnitOfWork(create_session_factory(self.engine), factories))
+        run = CalculationRun(started_by=self.user, forecast_horizon_days=30, source_cutoff_at=NOW,
+                             algorithm_version="ALG-01-05/v1", parameters={"demand_source": "transactions"},
+                             import_batch_ids=set(self.batches.values()))
+        args = dict(start=date(2026, 8, 1), end=date(2026, 8, 31), groups=[(self.product, self.warehouse)])
+        statements = []
+
+        @event.listens_for(self.engine, "before_cursor_execute")
+        def capture(connection, cursor, statement, parameters, context, many):
+            statements.append(statement)
+
+        with patch.object(SqlAlchemySalesRepository, "list_monthly_sales", side_effect=AssertionError("Mixed sources")), \
+                patch.object(SqlAlchemyUnitOfWork, "commit", side_effect=AssertionError("Unexpected commit")):
+            result = use_case.execute(run, **args, growth_assumption_ids={(self.product, self.warehouse): assumption})
+        period = result.series[0].periods[0]
+        self.assertEqual((period.raw_demand, period.return_adjustment, period.cleaned_demand), (10, -4, 6))
+        self.assertEqual(period.calculated_demand, Decimal("6.48"))
+        self.assertEqual(run.parameters, {"demand_source": "transactions"})
+        self.assertTrue(all(statement.lstrip().upper().startswith("SELECT") for statement in statements))
+        run.parameters = {"demand_source": "monthly_sales"}
+        with patch.object(SqlAlchemySalesRepository, "list_transactions", side_effect=AssertionError("Mixed sources")), \
+                patch.object(SqlAlchemySalesRepository, "list_returns_for_sales", side_effect=AssertionError("Invented returns")):
+            monthly = use_case.execute(run, **args)
+        self.assertEqual(monthly.series[0].periods[0].raw_demand, 999)
 
 
 if __name__ == "__main__":
