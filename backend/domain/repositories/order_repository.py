@@ -35,6 +35,10 @@ class InvalidOrderPersistenceStateError(OrderRepositoryError):
     pass
 
 
+class OrderConflictError(InvalidOrderPersistenceStateError):
+    """The persisted status/audit changed during this operation."""
+
+
 class OrderRepository(Protocol):
     """Persistence port for purchase orders and their export audit."""
 
@@ -51,7 +55,9 @@ class OrderRepository(Protocol):
 
     def add(self, order: PurchaseOrder) -> PurchaseOrder: ...
 
-    def save(self, order: PurchaseOrder) -> PurchaseOrder: ...
+    def save(self, order: PurchaseOrder, *, expected_status: PurchaseOrderStatus | None = None) -> PurchaseOrder:
+        """Conditionally update status; do not overwrite existing approval audit."""
+        ...
 
     def add_export(self, export: OrderExport) -> OrderExport: ...
 

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.domain.entities.enums import PurchaseOrderStatus
@@ -14,6 +14,7 @@ from backend.domain.repositories.order_repository import (
     DuplicateOrderNumberError,
     InvalidOrderPersistenceStateError,
     OrderNotFoundError,
+    OrderConflictError,
     RecommendationAlreadyOrderedError,
 )
 from backend.infrastructure.persistence.models.orders import (
@@ -85,6 +86,8 @@ class SqlAlchemyOrderRepository:
                 exported_at=order.exported_at,
             )
         )
+        # No ORM relationships: flush the FK parent explicitly before its items.
+        self._session.flush()
         self._session.add_all(
             PurchaseOrderItemModel(
                 id=item.id,
@@ -101,18 +104,24 @@ class SqlAlchemyOrderRepository:
         self._session.flush()
         return self._require_domain(order.id)
 
-    def save(self, order: PurchaseOrder) -> PurchaseOrder:
+    def save(self, order: PurchaseOrder, *, expected_status: PurchaseOrderStatus | None = None) -> PurchaseOrder:
         model = self._require(order.id)
+        if expected_status is not None and model.status is not expected_status:
+            raise OrderConflictError(f"Purchase order {order.id} changed concurrently")
         self._validate_transition(model.status, order.status)
         self._validate_immutable_header(model, order)
         self._validate_immutable_items(model.id, order.items)
 
-        model.status = order.status
-        model.approved_by = order.approved_by
-        model.approved_at = order.approved_at
-        model.exported_at = order.exported_at
-        self._session.flush()
-        return self._to_domain(model)
+        if model.status is not PurchaseOrderStatus.DRAFT and (
+            model.approved_by != order.approved_by or
+            (_aware(model.approved_at) if model.approved_at else None) != order.approved_at or
+            (_aware(model.exported_at) if model.exported_at else None) != order.exported_at
+        ):
+            raise OrderConflictError("approval and export audit cannot be overwritten")
+        self._change_status(order.id, model.status, status=order.status,
+                            approved_by=order.approved_by, approved_at=order.approved_at,
+                            exported_at=order.exported_at)
+        return self._require_domain(order.id)
 
     def add_export(self, export: OrderExport) -> OrderExport:
         order = self._require(export.purchase_order_id)
@@ -120,6 +129,10 @@ class SqlAlchemyOrderRepository:
             raise InvalidOrderPersistenceStateError(
                 "only an approved purchase order can be exported"
             )
+        domain_order = self._to_domain(order)
+        domain_order.mark_exported(exported_at=export.created_at)
+        self._change_status(order.id, PurchaseOrderStatus.APPROVED,
+                            status=domain_order.status, exported_at=domain_order.exported_at)
         model = OrderExportModel(
             id=export.id,
             purchase_order_id=export.purchase_order_id,
@@ -130,10 +143,17 @@ class SqlAlchemyOrderRepository:
             created_at=export.created_at,
         )
         self._session.add(model)
-        order.status = PurchaseOrderStatus.EXPORTED
-        order.exported_at = export.created_at
         self._session.flush()
         return self._export_to_domain(model)
+
+    def _change_status(self, order_id: UUID, expected_status: PurchaseOrderStatus, **values) -> None:
+        result = self._session.execute(update(PurchaseOrderModel).where(
+            PurchaseOrderModel.id == order_id,
+            PurchaseOrderModel.status == expected_status,
+        ).values(**values).execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            raise OrderConflictError(f"Purchase order {order_id} changed concurrently")
+        self._session.expire_all()
 
     def list_exports(self, order_id: UUID) -> Sequence[OrderExport]:
         self._require(order_id)
