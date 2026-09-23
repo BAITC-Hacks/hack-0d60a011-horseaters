@@ -27,3 +27,10 @@ export function adjustRecommendation(id: string, input: AdjustRecommendationInpu
     body: JSON.stringify(payload),
   });
 }
+
+export function acceptRecommendation(id: string, version: number) {
+  return apiRequest(`/api/recommendations/${encodeURIComponent(id)}/accept`, recommendationSchema, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  });
+}

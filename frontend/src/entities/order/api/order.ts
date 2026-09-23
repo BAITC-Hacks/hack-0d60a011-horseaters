@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
-import { apiDownload, apiRequest } from "@/shared/api";
+import { apiDownloadWithFilename, apiRequest } from "@/shared/api";
 import { createOrdersInputSchema, orderExportSchema, orderSchema, type CreateOrdersInput } from "../model/schema";
 
 export const orderKeys = {
@@ -32,6 +32,6 @@ export function createOrderExport(id: string) {
   return apiRequest(`/api/orders/${encodeURIComponent(id)}/export`, orderExportSchema, { method: "POST" });
 }
 
-export function downloadOrderExport(id: string): Promise<Blob> {
-  return apiDownload(`/api/orders/${encodeURIComponent(id)}/export`);
+export function downloadOrderExport(id: string): Promise<{ blob: Blob; filename: string | null }> {
+  return apiDownloadWithFilename(`/api/orders/${encodeURIComponent(id)}/export`);
 }

@@ -9,7 +9,6 @@ const nextConfig: NextConfig = {
     backend.pathname = backend.pathname.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
     const backendOrigin = backend.toString().replace(/\/$/, "");
     return [
-      { source: "/api/:path*", destination: `${backendOrigin}/api/:path*` },
       { source: "/health", destination: `${backendOrigin}/health` },
       { source: "/health/:path*", destination: `${backendOrigin}/health/:path*` },
     ];

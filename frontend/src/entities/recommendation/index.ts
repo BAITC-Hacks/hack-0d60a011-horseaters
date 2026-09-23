@@ -12,4 +12,4 @@ export type {
   RecommendationExplanation,
   AdjustRecommendationInput,
 } from "./model/schema";
-export { recommendationKeys, recommendationExplanationQueryOptions, adjustRecommendation } from "./api/recommendation";
+export { recommendationKeys, recommendationExplanationQueryOptions, adjustRecommendation, acceptRecommendation } from "./api/recommendation";

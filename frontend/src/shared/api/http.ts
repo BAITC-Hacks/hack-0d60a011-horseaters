@@ -35,17 +35,19 @@ export class ApiError extends Error {
 
 function getApiUrl(path: string): string {
   const isBrowser = typeof window !== "undefined";
+  // Browser requests must stay same-origin so the Next.js BFF can attach its HttpOnly session.
   const configured = isBrowser
-    ? process.env.NEXT_PUBLIC_API_URL
+    ? undefined
     : process.env.INTERNAL_API_URL ?? process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
     throw new ApiError(0, `Путь API должен начинаться с /: ${path}`);
   }
   if (!configured) return path;
   try {
-    // Config may end in /api/v1, whereas OpenAPI declares both /api and /api/v1 routes.
     const base = new URL(configured);
-    const url = new URL(path, base);
+    const basePath = base.pathname.replace(/\/(?:api\/v1|api)\/?$/, "").replace(/\/$/, "");
+    base.pathname = basePath || "/";
+    const url = new URL(path.replace(/^\/+/, ""), `${base.toString().replace(/\/$/, "")}/`);
     if (url.origin !== base.origin) throw new Error("cross-origin API path");
     return url.toString();
   } catch {
@@ -59,8 +61,10 @@ function errorFromBody(status: number, raw: unknown): ApiError {
   const requestId = parsed.success ? parsed.data.request_id : undefined;
   const code = typeof detail === "object" && detail !== null ? detail.code : undefined;
   const serverMessage = typeof detail === "string" ? detail : detail?.message;
-  const message = status === 403
-    ? "Доступ запрещён (403): сервер не распознал авторизованного пользователя."
+  const message = status === 401
+    ? "Сессия завершена. Войдите снова."
+    : status === 403
+    ? "Недостаточно прав для этой операции."
     : status === 404
       ? "Ресурс не найден (404)."
       : status === 501
@@ -133,6 +137,7 @@ async function withResponse<T>(
       signal: controller.signal,
       cache: "no-store",
     });
+    if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("stockwise:unauthorized"));
     return await read(response);
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -154,7 +159,12 @@ async function assertOk(response: Response): Promise<void> {
   } catch {
     body = { detail: bodyText || undefined };
   }
-  throw errorFromBody(response.status, body);
+  const error = errorFromBody(response.status, body);
+  if (!error.requestId) {
+    const requestId = response.headers.get("X-Request-ID");
+    if (requestId) Object.defineProperty(error, "requestId", { value: requestId, enumerable: true });
+  }
+  throw error;
 }
 
 export async function apiRequest<T>(
@@ -176,6 +186,18 @@ export async function apiDownload(path: string, init?: RequestInit, timeoutMs = 
   });
 }
 
+export async function apiDownloadWithFilename(path: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<{ blob: Blob; filename: string | null }> {
+  return withResponse(path, init, timeoutMs, async (response) => {
+    await assertOk(response);
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+    let filename = encoded ? decodeURIComponent(encoded) : plain ?? null;
+    if (filename) filename = filename.replace(/[\\/\0]/g, "").trim() || null;
+    return { blob: await response.blob(), filename };
+  });
+}
+
 export function apiUpload<T>(
   path: string,
   schema: z.ZodType<T>,
@@ -191,6 +213,7 @@ export function apiUpload<T>(
   return new Promise<T>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", url);
+    request.withCredentials = true;
     request.timeout = Math.max(30_000, timeoutMs);
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded, event.total);
@@ -200,6 +223,7 @@ export function apiUpload<T>(
     request.addEventListener("abort", () => reject(new ApiError(0, "Загрузка файла отменена.", { code: "request_aborted" })));
     request.addEventListener("load", () => {
       try {
+        if (request.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("stockwise:unauthorized"));
         if (request.status < 200 || request.status >= 300) {
           let body: unknown;
           try {
