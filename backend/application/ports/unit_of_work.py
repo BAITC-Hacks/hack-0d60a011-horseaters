@@ -2,6 +2,8 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Protocol, Self
 
+from backend.domain.repositories.import_repository import ImportRepository
+
 
 class Repository(Protocol):
     """Marker port refined by repository-specific protocols in REP tasks."""
@@ -11,7 +13,7 @@ class UnitOfWork(Protocol):
     """Application transaction boundary; contains no SQLAlchemy dependency."""
 
     @property
-    def imports(self) -> Repository: ...
+    def imports(self) -> ImportRepository: ...
 
     @property
     def sales(self) -> Repository: ...
