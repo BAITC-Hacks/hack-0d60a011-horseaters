@@ -5,6 +5,7 @@ import { ArrowDownToLine, ArrowRight, Mail, Plus, RefreshCw } from "lucide-react
 import { useMemo, useState } from "react";
 import { getStockStatus, getSuggestedQuantity, inventoryQueryOptions } from "@/entities/inventory";
 import { useOrderQuantityStore } from "@/features/adjust-order-quantity";
+import { ApproveAction } from "@/features/approve-order";
 import {
   AiExecutiveBanner,
   SkuAnalysisDrawer,
@@ -31,13 +32,16 @@ export function InventoryPage({ initialSearch = "" }: { initialSearch?: string }
   const clearSelection = useSelectionStore((state) => state.clear);
   const quantityById = useOrderQuantityStore((state) => state.quantityById);
   const openLetter = useAiStore((state) => state.openLetterModal);
+  const editingId = useEditStore((state) => state.editingId);
+  const [notice, setNotice] = useState("");
 
   const suppliers = useMemo(
     () => [...new Set(data.map((item) => item.supplier || item.supplier_name || "IEK Казахстан"))].sort((a, b) => a.localeCompare(b, "ru")),
     [data]
   );
   const filtered = useMemo(() => filterInventory(data, filter), [data, filter]);
-  const explainedItem = data.find((item) => item.id === explainedId) ?? null;
+  const categories = useMemo(() => [...new Set(data.map((item) => item.category))].sort((a, b) => a.localeCompare(b, "ru")), [data]);
+  const editingItem = data.find((item) => item.id === editingId) ?? null;
   const tabCounts = {
     all: data.length,
     critical: data.filter((item) => getStockStatus(item) === "critical").length,
@@ -102,7 +106,12 @@ export function InventoryPage({ initialSearch = "" }: { initialSearch?: string }
           {/* Bento AI Executive Banner */}
           <AiExecutiveBanner items={data} />
 
-          <OverviewCards items={data} />
+          <OverviewCards items={data} days={days} quantities={quantityById} />
+
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            {tabs.map((tab) => <button key={tab.key} type="button" onClick={() => setFilter((current) => ({ ...current, status: tab.key }))} aria-pressed={filter.status === tab.key} className={`rounded-full border px-4 py-2 text-xs font-semibold ${filter.status === tab.key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"}`}>{tab.label} {tab.count}</button>)}
+            <Button variant="secondary" onClick={() => selectMany(filtered.filter((item) => item.status !== "approved" && (quantities[item.id] ?? 0) > 0).map((item) => item.id))}>Выбрать к заказу</Button>
+          </div>
 
           <div className="mt-6 grid gap-5 2xl:grid-cols-[minmax(0,1fr)_310px] 2xl:items-start">
             <Card id="inventory" className="min-w-0 overflow-hidden">
@@ -122,14 +131,14 @@ export function InventoryPage({ initialSearch = "" }: { initialSearch?: string }
                 </div>
               </div>
 
-              <FilterBar value={filter} onChange={setFilter} suppliers={suppliers} count={filtered.length} />
+              <FilterBar value={filter} onChange={setFilter} suppliers={suppliers} categories={categories} count={filtered.length} />
 
               {isPending ? (
                 <div className="flex min-h-60 items-center justify-center text-sm text-muted-foreground">
                   Загрузка рекомендаций пополнения…
                 </div>
               ) : (
-                <InventoryTable items={filtered} />
+                <InventoryTable items={filtered} days={days} />
               )}
 
               <div className="flex items-center justify-between border-t border-border px-5 py-4 font-mono text-[10px] text-muted-foreground">
@@ -140,7 +149,7 @@ export function InventoryPage({ initialSearch = "" }: { initialSearch?: string }
               </div>
             </Card>
 
-            <OrderSummary items={filtered} />
+            <div className="space-y-4"><OrderSummary items={filtered} days={days} /><ApproveAction items={data} selectedIds={selectedIds} quantities={quantities} onDone={clearSelection} /></div>
           </div>
         </>
       )}

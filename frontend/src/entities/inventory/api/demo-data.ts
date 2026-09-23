@@ -1,27 +1,6 @@
-import type { InventoryItem } from "../model";
+import { inventoryListSchema } from "../model";
 
-type DemoItem = Pick<InventoryItem,
-  "id" | "sku" | "name" | "category" | "supplier" | "unit" | "stock" | "minStock" |
-  "demand30" | "leadDays" | "packSize" | "unitCost" | "inTransit" | "moq" |
-  "supplierMinOrder" | "riskScore" | "anomalyCount" | "anomalyAdjustment" |
-  "stockoutAdjustment" | "explanation"
-> & Partial<Pick<InventoryItem, "materialNeed" | "warehouse" | "growthFactor" | "seasonalityIndex" | "status">>;
-
-function item(input: DemoItem): InventoryItem {
-  return {
-    materialNeed: 0,
-    warehouse: "Алматы",
-    growthFactor: 1.04,
-    seasonalityIndex: 1.08,
-    status: "suggested",
-    approvedQuantity: null,
-    approvedAt: null,
-    approvedBy: null,
-    ...input,
-  };
-}
-
-export const demoInventory: InventoryItem[] = [
+export const demoInventory = inventoryListSchema.parse([
   {
     id: "010500004_",
     sku: "010500004_",
@@ -322,4 +301,13 @@ export const demoInventory: InventoryItem[] = [
     has_whale_outlier: false,
     stockout_recovered: true,
   },
-];
+]).map((row) => ({
+  ...row,
+  demand30: Math.round((row.daily_demand ?? 0) * 30),
+  inTransit: row.in_transit,
+  supplierMinOrder: 500_000,
+  riskScore: row.urgency === "CRITICAL" ? 0.95 : row.urgency === "HIGH" ? 0.75 : row.urgency === "MEDIUM" ? 0.5 : 0.15,
+  anomalyCount: row.has_whale_outlier ? 1 : 0,
+  seasonalityIndex: row.season_factor,
+  explanation: row.reasoning,
+}));
