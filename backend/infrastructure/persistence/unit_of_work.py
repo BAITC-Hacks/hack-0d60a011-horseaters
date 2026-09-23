@@ -8,6 +8,7 @@ from typing import cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.application.ports.unit_of_work import Repository
+from backend.domain.repositories.import_repository import ImportRepository
 
 
 RepositoryFactory = Callable[[Session], Repository]
@@ -15,7 +16,7 @@ RepositoryFactory = Callable[[Session], Repository]
 
 @dataclass(frozen=True, slots=True)
 class RepositoryFactories:
-    imports: RepositoryFactory
+    imports: Callable[[Session], ImportRepository]
     sales: RepositoryFactory
     inventory: RepositoryFactory
     suppliers: RepositoryFactory
@@ -49,8 +50,8 @@ class SqlAlchemyUnitOfWork:
         self._repositories: dict[str, Repository] = {}
 
     @property
-    def imports(self) -> Repository:
-        return self._repository("imports")
+    def imports(self) -> ImportRepository:
+        return cast(ImportRepository, self._repository("imports"))
 
     @property
     def sales(self) -> Repository:
