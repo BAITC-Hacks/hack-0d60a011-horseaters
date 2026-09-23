@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { InventoryItem } from "@/entities/inventory";
 import { formatMoney } from "@/shared/lib";
-import { Button, Card } from "@/shared/ui";
+import { Button, Card, ErrorMessage, Skeleton } from "@/shared/ui";
 import { fetchSupplierSummary } from "../api/ai-api";
 import { useAiStore } from "../model/ai-store";
 
@@ -23,19 +23,19 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
   const openExec = useAiStore((state) => state.openExecutiveModal);
   const closeExec = useAiStore((state) => state.closeExecutiveModal);
 
-  const critical = items.filter((i) => i.urgency === "CRITICAL");
+  const critical = items.filter((item) => item.urgency.toLowerCase() === "critical");
   const totalBudget = items.reduce(
-    (sum, i) => sum + (i.adjusted_need ?? i.calculated_need ?? 0) * (i.unitCost ?? 0),
+    (sum, item) => sum + item.adjusted_need * item.unit_price,
     0
   );
 
-  const { data: summary, isPending } = useQuery({
+  const { data: summary, isPending, isError, error, refetch } = useQuery({
     queryKey: [
       "ai-supplier-summary",
       items.map((i) => `${i.id}:${i.adjusted_need}`).join(","),
     ],
     queryFn: () => fetchSupplierSummary(items),
-    enabled: items.length > 0,
+    enabled: isExecOpen && items.length > 0,
     staleTime: 300_000,
   });
 
@@ -51,33 +51,27 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-blue-400">
-                  AI-Ассистент снабжения • IEK Казахстан
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[9px] font-bold text-blue-300">
-                  <Bot className="h-2.5 w-2.5" />
-                  gpt-4o-mini
+                  Анализ рекомендаций по закупке
                 </span>
               </div>
               <h3 className="mt-1 text-base font-bold text-foreground sm:text-lg">
-                Внимание: в октябре сезонный пик спроса (+24%). Выявлено {critical.length}{" "}
-                критических позиции.
+                Критических позиций: {critical.length} из {items.length}
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Бюджет планового заказа:{" "}
+                Стоимость позиций по текущему количеству:{" "}
                 <span className="font-semibold text-foreground">{formatMoney(totalBudget)}</span>.
-                Склад обнулится по дефицитным позициям через 1–3 дня при плече доставки 14 дней.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" onClick={openExec} className="text-xs">
+            <Button variant="secondary" onClick={openExec} className="text-xs" disabled={items.length === 0}>
               <FileText className="h-3.5 w-3.5" />
-              Executive-сводка
+              Сводка
             </Button>
-            <Button onClick={openLetter} className="text-xs">
+            <Button onClick={openLetter} className="text-xs" disabled={items.length === 0}>
               <Mail className="h-3.5 w-3.5" />
-              Письмо вендору (IEK)
+              Письмо поставщику
             </Button>
           </div>
         </div>
@@ -99,7 +93,7 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-card-foreground">
-                      Executive-сводка по закупке IEK
+                      Сводка по закупке
                     </h2>
                     {summary && (
                       <span
@@ -110,12 +104,12 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
                         }`}
                       >
                         <Bot className="h-3 w-3" />
-                        {summary.is_fallback ? "Детерминированный срез" : "OpenAI gpt-4o-mini"}
+                        {summary.is_fallback ? "Серверный шаблон" : "Анализ сервера"}
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Планирование на октябрь 2026 (горизонт 44 дня, сезонный индекс 1.242)
+                    Сводка на основе {items.length} позиций текущего списка
                   </p>
                 </div>
               </div>
@@ -130,12 +124,13 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
 
             <div className="flex-1 space-y-6 overflow-y-auto p-6 text-sm">
               {isPending ? (
-                <div className="flex min-h-60 flex-col items-center justify-center gap-3 text-center">
-                  <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                  <p className="text-xs text-muted-foreground">
-                    Формирование сводного управленческого отчета…
-                  </p>
+                <div role="status" aria-label="Загрузка сводки" className="space-y-3">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-24 w-full" />
                 </div>
+              ) : isError ? (
+                <ErrorMessage title="Не удалось получить сводку" error={error} onRetry={() => void refetch()} />
               ) : summary ? (
                 <>
                   <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-4">
@@ -187,7 +182,9 @@ export function AiExecutiveBanner({ items }: { items: InventoryItem[] }) {
                     </ul>
                   </div>
                 </>
-              ) : null}
+              ) : (
+                <p className="text-sm text-muted-foreground">Сервер не вернул сводку.</p>
+              )}
             </div>
 
             <div className="flex items-center justify-between border-t border-border bg-card-muted/30 p-5">

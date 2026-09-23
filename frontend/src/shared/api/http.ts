@@ -1,62 +1,221 @@
 import { z } from "zod";
 
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+const errorResponseSchema = z.object({
+  detail: z.union([
+    z.string(),
+    z.object({
+      code: z.string().optional(),
+      message: z.string().optional(),
+      validation_errors: z.array(z.unknown()).optional(),
+      issues: z.array(z.unknown()).optional(),
+    }).passthrough(),
+  ]).optional(),
+  request_id: z.string().optional(),
+});
+
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  readonly code: string | undefined;
+  readonly requestId: string | undefined;
+  readonly validationErrors: readonly unknown[];
+
+  constructor(
+    public readonly status: number,
+    message: string,
+    options: { code?: string; requestId?: string; validationErrors?: readonly unknown[] } = {},
+  ) {
     super(message);
     this.name = "ApiError";
+    this.code = options.code;
+    this.requestId = options.requestId;
+    this.validationErrors = options.validationErrors ?? [];
   }
 }
 
-function getApiBaseUrl(): string {
-  const raw = typeof window === "undefined"
-    ? process.env.INTERNAL_API_URL ?? process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL
-    : process.env.NEXT_PUBLIC_API_URL;
-  if (!raw) throw new ApiError(0, "Адрес FastAPI не задан. Укажите INTERNAL_API_URL или NEXT_PUBLIC_API_URL.");
-  return raw.replace(/\/$/, "");
+function getApiUrl(path: string): string {
+  const isBrowser = typeof window !== "undefined";
+  const configured = isBrowser
+    ? process.env.NEXT_PUBLIC_API_URL
+    : process.env.INTERNAL_API_URL ?? process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
+    throw new ApiError(0, `Путь API должен начинаться с /: ${path}`);
+  }
+  if (!configured) return path;
+  try {
+    // Config may end in /api/v1, whereas OpenAPI declares both /api and /api/v1 routes.
+    const base = new URL(configured);
+    const url = new URL(path, base);
+    if (url.origin !== base.origin) throw new Error("cross-origin API path");
+    return url.toString();
+  } catch {
+    throw new ApiError(0, "Адрес FastAPI имеет неверный формат.");
+  }
+}
+
+function errorFromBody(status: number, raw: unknown): ApiError {
+  const parsed = errorResponseSchema.safeParse(raw);
+  const detail = parsed.success ? parsed.data.detail : undefined;
+  const requestId = parsed.success ? parsed.data.request_id : undefined;
+  const code = typeof detail === "object" && detail !== null ? detail.code : undefined;
+  const serverMessage = typeof detail === "string" ? detail : detail?.message;
+  const message = status === 403
+    ? "Доступ запрещён (403): сервер не распознал авторизованного пользователя."
+    : status === 404
+      ? "Ресурс не найден (404)."
+      : status === 501
+        ? "Операция ещё не реализована на сервере (501)."
+        : serverMessage || `Ошибка сервера (${status}).`;
+  const validationErrors = typeof detail === "object" && detail !== null
+    ? detail.validation_errors ?? detail.issues ?? []
+    : [];
+  const validationSummary = validationErrors.flatMap((issue) => {
+    if (typeof issue !== "object" || issue === null) return [];
+    if ("missing_columns" in issue && Array.isArray(issue.missing_columns)) {
+      const names = issue.missing_columns.filter((name): name is string => typeof name === "string");
+      return names.length ? [`Отсутствуют столбцы: ${names.join(", ")}.`] : [];
+    }
+    if ("row" in issue && typeof issue.row === "number") return [`Ошибка в строке ${issue.row}.`];
+    if ("message" in issue && typeof issue.message === "string") return [issue.message];
+    return [];
+  });
+  const fullMessage = validationSummary.length ? `${message} ${validationSummary.join(" ")}` : message;
+  return new ApiError(status, fullMessage, { code, requestId, validationErrors });
+}
+
+function parseJson(value: string, status: number): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new ApiError(status, "Сервер вернул некорректный JSON.");
+  }
+}
+
+function parseResponse<T>(raw: unknown, status: number, schema: z.ZodType<T>): T {
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path.join(".");
+    const message = field
+      ? `Ответ сервера не соответствует контракту данных: поле ${field}.`
+      : "Ответ сервера не соответствует контракту данных.";
+    throw new ApiError(status, message, {
+      code: "invalid_response",
+      validationErrors: parsed.error.issues,
+    });
+  }
+  return parsed.data;
+}
+
+function requestHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers);
+  if (typeof init?.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return headers;
+}
+
+async function withResponse<T>(
+  path: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
+  const url = getApiUrl(path);
+  if (init?.signal?.aborted) throw new ApiError(0, "Запрос отменён.", { code: "request_aborted" });
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  init?.signal?.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(abort, Math.max(30_000, timeoutMs));
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: requestHeaders(init),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    return await read(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (init?.signal?.aborted) throw new ApiError(0, "Запрос отменён.", { code: "request_aborted" });
+    if (controller.signal.aborted) throw new ApiError(0, "Превышено время ожидания ответа сервера.", { code: "request_timeout" });
+    throw new ApiError(0, "Не удалось подключиться к серверу. Проверьте адрес API и сеть.", { code: "network_error" });
+  } finally {
+    clearTimeout(timer);
+    init?.signal?.removeEventListener("abort", abort);
+  }
+}
+
+async function assertOk(response: Response): Promise<void> {
+  if (response.ok) return;
+  const bodyText = await response.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText) as unknown;
+  } catch {
+    body = { detail: bodyText || undefined };
+  }
+  throw errorFromBody(response.status, body);
 }
 
 export async function apiRequest<T>(
   path: string,
   schema: z.ZodType<T>,
   init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  let response: Response;
-  const baseUrl = getApiBaseUrl();
-  const normalizedPath = baseUrl.endsWith("/api/v1") && path.startsWith("/api/v1")
-    ? path.slice("/api/v1".length)
-    : path;
-  const url = `${baseUrl}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`;
+  return withResponse(path, init, timeoutMs, async (response) => {
+    await assertOk(response);
+    return parseResponse(parseJson(await response.text(), response.status), response.status, schema);
+  });
+}
 
-  try {
-    response = await fetch(url, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
-      cache: "no-store",
+export async function apiDownload(path: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Blob> {
+  return withResponse(path, init, timeoutMs, async (response) => {
+    await assertOk(response);
+    return response.blob();
+  });
+}
+
+export function apiUpload<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  formData: FormData,
+  onProgress?: (loaded: number, total: number) => void,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  if (typeof XMLHttpRequest === "undefined") {
+    return apiRequest(path, schema, { method: "POST", body: formData }, timeoutMs);
+  }
+
+  const url = getApiUrl(path);
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", url);
+    request.timeout = Math.max(30_000, timeoutMs);
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded, event.total);
     });
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(0, "Не удалось подключиться к серверу. Проверьте адрес API и сеть.");
-  }
-
-  if (!response.ok) {
-    let detail = `Ошибка сервера (${response.status})`;
-    try {
-      const body: unknown = await response.json();
-      if (typeof body === "object" && body !== null && "detail" in body) {
-        const value = body.detail;
-        if (typeof value === "string") detail = value;
+    request.addEventListener("error", () => reject(new ApiError(0, "Не удалось загрузить файл на сервер.", { code: "network_error" })));
+    request.addEventListener("timeout", () => reject(new ApiError(0, "Превышено время ожидания загрузки файла.", { code: "request_timeout" })));
+    request.addEventListener("abort", () => reject(new ApiError(0, "Загрузка файла отменена.", { code: "request_aborted" })));
+    request.addEventListener("load", () => {
+      try {
+        if (request.status < 200 || request.status >= 300) {
+          let body: unknown;
+          try {
+            body = JSON.parse(request.responseText) as unknown;
+          } catch {
+            body = { detail: request.responseText || undefined };
+          }
+          reject(errorFromBody(request.status, body));
+          return;
+        }
+        const body = parseJson(request.responseText, request.status);
+        resolve(parseResponse(body, request.status, schema));
+      } catch (error) {
+        reject(error);
       }
-    } catch { /* A non-JSON error response keeps the status message. */ }
-    throw new ApiError(response.status, detail);
-  }
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    throw new ApiError(response.status, "Сервер вернул некорректный JSON.");
-  }
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new ApiError(response.status, "Ответ сервера не соответствует контракту данных.");
-  return parsed.data;
+    });
+    request.send(formData);
+  });
 }

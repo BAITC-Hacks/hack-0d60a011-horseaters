@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Check, Copy, Mail, X } from "lucide-react";
 import { useState } from "react";
 import type { InventoryItem } from "@/entities/inventory";
-import { Button, Card } from "@/shared/ui";
+import { Button, Card, ErrorMessage, Skeleton } from "@/shared/ui";
 import { fetchSupplierLetter } from "../api/ai-api";
 import { useAiStore } from "../model/ai-store";
 
@@ -12,6 +12,7 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
   const isOpen = useAiStore((state) => state.isLetterModalOpen);
   const close = useAiStore((state) => state.closeLetterModal);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<Error | null>(null);
 
   const orderItems = items.filter((i) => (i.adjusted_need ?? i.calculated_need ?? 0) > 0);
 
@@ -19,6 +20,8 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
     data: letter,
     isPending,
     isError,
+    error,
+    refetch,
   } = useQuery({
     queryKey: [
       "ai-supplier-letter",
@@ -31,12 +34,24 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
 
   if (!isOpen) return null;
 
-  function copyText() {
+  function closeModal() {
+    setCopied(false);
+    setCopyError(null);
+    close();
+  }
+
+  async function copyText() {
     if (!letter) return;
     const fullText = `Тема: ${letter.subject}\nКому: ${letter.recipient}\n\n${letter.salutation}\n\n${letter.letter_body}\n\n${letter.items_table}\n\n${letter.closing}`;
-    navigator.clipboard.writeText(fullText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    try {
+      await navigator.clipboard.writeText(fullText);
+      setCopyError(null);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (cause) {
+      setCopied(false);
+      setCopyError(cause instanceof Error ? cause : new Error("Не удалось скопировать текст."));
+    }
   }
 
   return (
@@ -55,7 +70,7 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-card-foreground">
-                  Официальное письмо в ТОО «ИЭК КАЗАХСТАН»
+                  Письмо поставщику
                 </h2>
                 {letter && (
                   <span
@@ -66,17 +81,17 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
                     }`}
                   >
                     <Bot className="h-3 w-3" />
-                    {letter.is_fallback ? "Шаблон заявки" : "OpenAI gpt-4o-mini"}
+                    {letter.is_fallback ? "Серверный шаблон" : "Текст сервера"}
                   </span>
                 )}
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Бронирование складского запаса на октябрь 2026 ({orderItems.length} позиций)
+                Черновик по {orderItems.length} позициям из текущего списка
               </p>
             </div>
           </div>
           <button
-            onClick={close}
+            onClick={closeModal}
             className="rounded-xl p-2 text-muted-foreground transition hover:bg-card-muted hover:text-foreground"
             aria-label="Закрыть"
           >
@@ -91,14 +106,15 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
               Нет позиций с потребностью к заказу (&gt; 0).
             </p>
           ) : isPending ? (
-            <div className="flex min-h-60 flex-col items-center justify-center gap-3 text-center">
-              <div className="h-7 w-7 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
-              <p className="text-xs text-muted-foreground">
-                Генерация официального письма с реквизитами и таблицей спецификации…
-              </p>
+            <div role="status" aria-label="Загрузка письма" className="space-y-3">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-20 w-full" />
             </div>
-          ) : isError || !letter ? (
-            <p className="py-6 text-center text-red-400">Не удалось сгенерировать письмо.</p>
+          ) : isError ? (
+            <ErrorMessage title="Не удалось получить письмо" error={error} onRetry={() => void refetch()} />
+          ) : !letter ? (
+            <p className="py-6 text-center text-muted-foreground">Сервер не вернул текст письма.</p>
           ) : (
             <div className="space-y-4 rounded-xl border border-border bg-card-muted/50 p-5 font-sans leading-relaxed">
               <div className="border-b border-border pb-3">
@@ -128,15 +144,16 @@ export function SupplierLetterModal({ items }: { items: InventoryItem[] }) {
               </div>
             </div>
           )}
+          {copyError && <ErrorMessage title="Не удалось скопировать письмо" error={copyError} onRetry={() => void copyText()} />}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-border bg-card-muted/30 p-5">
           <p className="text-xs text-muted-foreground">
-            Письмо готово для отправки официальным каналом поставщику.
+            Проверьте реквизиты и содержание перед отправкой поставщику.
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={close}>
+            <Button variant="secondary" onClick={closeModal}>
               Закрыть
             </Button>
             <Button onClick={copyText} disabled={!letter}>

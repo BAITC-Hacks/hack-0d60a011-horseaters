@@ -1,24 +1,35 @@
 "use client";
 
-import { Download, FileCode2, FileSpreadsheet } from "lucide-react";
-import { useState } from "react";
-import type { InventoryItem } from "@/entities/inventory";
-import { Button } from "@/shared/ui";
-import { exportApprovedOrder, type ExportFormat } from "../lib/export-1c";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download } from "lucide-react";
+import { createOrderExport, downloadOrderExport, orderKeys, type Order } from "@/entities/order";
+import { Button, ErrorMessage } from "@/shared/ui";
 
-export function ExportMenu({ items }: { items: InventoryItem[] }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const approvedCount = items.filter((item) => item.status === "approved" && (item.approvedQuantity ?? 0) > 0).length;
+export function ExportMenu({ order }: { order: Order }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const metadata = await createOrderExport(order.id);
+      const blob = await downloadOrderExport(order.id);
+      if (blob.size === 0) throw new Error("Сервер вернул пустой файл экспорта.");
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = metadata.file_name;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      return metadata;
+    },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: orderKeys.detail(order.id) }); },
+  });
 
-  async function run(format: ExportFormat) {
-    setBusy(true);
-    setMessage("");
-    try { const count = await exportApprovedOrder(items, format); setMessage(`Выгружено ${count} позиций.`); setOpen(false); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось сформировать файл."); }
-    finally { setBusy(false); }
-  }
-
-  return <div className="relative"><Button variant="secondary" onClick={() => setOpen((value) => !value)} disabled={approvedCount === 0 || busy} aria-expanded={open}><Download className="h-4 w-4" />Экспорт в 1С ({approvedCount})</Button>{open && <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-border bg-card p-2 shadow-2xl"><button onClick={() => void run("xlsx")} className="flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left text-xs hover:bg-card-muted"><FileSpreadsheet className="h-4 w-4 text-emerald-500" />Заказ поставщику (.xlsx)</button><button onClick={() => void run("xml")} className="flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left text-xs hover:bg-card-muted"><FileCode2 className="h-4 w-4 text-blue-500" />XML-пакет обмена</button></div>}{message && <p role="status" className="absolute right-0 top-12 z-20 w-60 rounded-xl border border-border bg-card p-2 text-xs text-muted-foreground shadow-lg">{message}</p>}</div>;
+  return <div className="space-y-2"><Button type="button" variant="secondary" disabled={mutation.isPending || (order.status !== "approved" && order.status !== "exported")} onClick={() => mutation.mutate()}><Download className="h-4 w-4" />{mutation.isPending ? "Готовим файл…" : "Скачать XLSX из API"}</Button>
+    {mutation.isError && <ErrorMessage title="Не удалось скачать экспорт" error={mutation.error} onRetry={() => mutation.mutate()} />}
+    {mutation.isSuccess && <p role="status" className="text-xs text-emerald-500">Файл {mutation.data.file_name} получен от сервера.</p>}
+  </div>;
 }

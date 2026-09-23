@@ -15,39 +15,58 @@ import {
   Truck,
   X,
 } from "lucide-react";
+import { recommendationExplanationQueryOptions } from "@/entities/recommendation";
+import { apiUuidSchema } from "@/shared/api";
 import { formatMoney, formatNumber } from "@/shared/lib";
-import { Badge, Button } from "@/shared/ui";
+import { Badge, Button, ErrorMessage, Skeleton } from "@/shared/ui";
 import { fetchSkuAnalysis } from "../api/ai-api";
 import { useAiStore } from "../model/ai-store";
 
 export function SkuAnalysisDrawer() {
   const item = useAiStore((state) => state.activeDrawerItem);
   const close = useAiStore((state) => state.closeDrawer);
+  const hasRecommendationId = apiUuidSchema.safeParse(item?.id).success;
 
   const {
     data: analysis,
     isPending,
     isError,
+    error,
+    refetch,
   } = useQuery({
     queryKey: ["ai-sku-analysis", item?.id, item?.adjusted_need, item?.current_stock],
-    queryFn: () => (item ? fetchSkuAnalysis(item) : Promise.reject("No item")),
+    queryFn: () => {
+      if (!item) throw new Error("Позиция для анализа не выбрана.");
+      return fetchSkuAnalysis(item);
+    },
     enabled: Boolean(item),
     staleTime: 300_000,
+  });
+
+  const {
+    data: explanation,
+    isPending: isExplanationPending,
+    isError: isExplanationError,
+    error: explanationError,
+    refetch: refetchExplanation,
+  } = useQuery({
+    ...recommendationExplanationQueryOptions(item?.id ?? ""),
+    enabled: Boolean(item && hasRecommendationId),
   });
 
   if (!item) return null;
 
   const stock = item.current_stock ?? item.stock;
   const inTransit = item.in_transit ?? 0;
-  const dailyDemand = item.daily_demand ?? (item.demand30 ? item.demand30 / 30 : 0);
-  const daysOfStock = item.days_of_stock ?? (dailyDemand > 0 ? stock / dailyDemand : 0);
+  const dailyDemand = item.daily_demand;
+  const daysOfStock = item.days_of_stock;
   const mult = item.package_multiplicity ?? item.packSize ?? 1;
-  const need = item.adjusted_need ?? item.calculated_need ?? 0;
-  const unitPrice = item.unit_price ?? item.unitCost ?? 0;
-  const cost = need * unitPrice;
+  const need = item.adjusted_need ?? item.calculated_need;
+  const unitPrice = item.unit_price ?? item.unitCost;
+  const cost = need !== undefined && unitPrice !== undefined ? need * unitPrice : null;
 
-  const isCritical = item.urgency === "CRITICAL";
-  const isHigh = item.urgency === "HIGH";
+  const isCritical = item.urgency.toLowerCase() === "critical";
+  const isHigh = item.urgency.toLowerCase() === "high";
 
   return (
     <div
@@ -74,7 +93,7 @@ export function SkuAnalysisDrawer() {
               {item.name || item.item_name}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {item.category} • {item.supplier || item.supplier_name || "IEK Казахстан"}
+              {item.category} • {item.supplier_name || item.supplier}
             </p>
           </div>
           <button
@@ -138,10 +157,10 @@ export function SkuAnalysisDrawer() {
               </span>
               <p
                 className={`mt-1 text-lg font-bold ${
-                  daysOfStock <= 5 ? "text-red-400" : daysOfStock <= 15 ? "text-amber-400" : "text-emerald-400"
+                  daysOfStock == null ? "text-muted-foreground" : daysOfStock <= 5 ? "text-red-400" : daysOfStock <= 15 ? "text-amber-400" : "text-emerald-400"
                 }`}
               >
-                {daysOfStock.toFixed(1)} дн.
+                {daysOfStock == null ? "Нет данных" : `${daysOfStock.toFixed(1)} дн.`}
               </p>
             </div>
 
@@ -150,7 +169,7 @@ export function SkuAnalysisDrawer() {
                 <TrendingUp className="h-3.5 w-3.5" /> Расход / сут
               </span>
               <p className="mt-1 text-base font-bold text-foreground">
-                {dailyDemand.toFixed(1)}{" "}
+                {dailyDemand == null ? "Нет данных" : dailyDemand.toFixed(1)}{" "}
                 <span className="font-mono text-xs font-normal text-muted-foreground">
                   {item.unit}/д
                 </span>
@@ -159,19 +178,16 @@ export function SkuAnalysisDrawer() {
 
             <div className="rounded-xl border border-border bg-card-muted p-3">
               <span className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> Сезон октябрь
+                <Calendar className="h-3.5 w-3.5" /> Индекс сезонности
               </span>
               <p className="mt-1 text-base font-bold text-foreground">
-                +{Math.round(((item.season_factor ?? 1.242) - 1) * 100)}%{" "}
-                <span className="font-mono text-xs font-normal text-muted-foreground">
-                  (×{(item.season_factor ?? 1.242).toFixed(2)})
-                </span>
+                {item.season_factor == null ? "Нет данных" : `×${item.season_factor.toFixed(2)}`}
               </p>
             </div>
 
             <div className="rounded-xl border border-border bg-card-muted p-3">
               <span className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
-                <Layers className="h-3.5 w-3.5" /> Кратность IEK
+                <Layers className="h-3.5 w-3.5" /> Кратность упаковки
               </span>
               <p className="mt-1 text-base font-bold text-foreground">
                 {mult}{" "}
@@ -197,7 +213,7 @@ export function SkuAnalysisDrawer() {
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
                   <Sparkles className="h-4 w-4" />
                 </div>
-                <h3 className="text-sm font-bold text-foreground">AI-Обоснование закупки</h3>
+                <h3 className="text-sm font-bold text-foreground">Анализ позиции</h3>
               </div>
               {analysis && (
                 <span
@@ -208,20 +224,21 @@ export function SkuAnalysisDrawer() {
                   }`}
                 >
                   <Bot className="h-3 w-3" />
-                  {analysis.is_fallback ? "Детерминированный расчет" : "OpenAI gpt-4o-mini"}
+                  {analysis.is_fallback ? "Серверный шаблон" : "Анализ сервера"}
                 </span>
               )}
             </div>
 
             {isPending ? (
-              <div className="flex min-h-44 flex-col items-center justify-center gap-3 py-8 text-center">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                <p className="text-xs text-muted-foreground">
-                  Анализ остатков, путей, темпа и расчет рисков через LLM…
-                </p>
+              <div role="status" aria-label="Загрузка анализа" className="mt-4 space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-16 w-full" />
               </div>
-            ) : isError || !analysis ? (
-              <p className="py-4 text-xs text-red-400">Не удалось загрузить AI-анализ позиции.</p>
+            ) : isError ? (
+              <div className="mt-4"><ErrorMessage title="Не удалось загрузить анализ позиции" error={error} onRetry={() => void refetch()} /></div>
+            ) : !analysis ? (
+              <p className="py-4 text-xs text-muted-foreground">Сервер не вернул анализ позиции.</p>
             ) : (
               <div className="mt-4 space-y-4 text-xs leading-relaxed">
                 <div>
@@ -267,11 +284,33 @@ export function SkuAnalysisDrawer() {
             )}
           </div>
 
-          {/* Mathematical Reasoning Snapshot */}
+          <div className="rounded-2xl border border-border bg-card-muted p-5">
+            <h3 className="text-sm font-bold text-foreground">Формула расчёта</h3>
+            {!hasRecommendationId ? (
+              <p className="mt-2 text-xs text-muted-foreground">Формула недоступна для обзорного списка. Откройте рекомендацию завершённого расчёта.</p>
+            ) : isExplanationPending ? (
+              <div role="status" aria-label="Загрузка формулы" className="mt-3 space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : isExplanationError ? (
+              <div className="mt-3"><ErrorMessage title="Не удалось загрузить формулу" error={explanationError} onRetry={() => void refetchExplanation()} /></div>
+            ) : explanation ? (
+              <div className="mt-3 space-y-3 text-xs text-muted-foreground">
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-3 font-mono text-foreground">{explanation.formula}</pre>
+                <p>{explanation.text}</p>
+                <p>Аномалий в расчёте: {explanation.anomalies.length}</p>
+                <p>Итоговый прогноз: {formatNumber(explanation.forecast.forecast_quantity)} {item.unit}</p>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">Сервер не вернул формулу расчёта.</p>
+            )}
+          </div>
+
           {item.reasoning && (
             <div className="rounded-xl border border-border bg-card-muted p-4">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Логика Pandas / NumPy пайплайна
+                Обоснование в обзорном списке
               </span>
               <p className="mt-1.5 text-xs text-muted-foreground">{item.reasoning}</p>
             </div>
@@ -283,11 +322,11 @@ export function SkuAnalysisDrawer() {
           <div>
             <p className="text-[10px] font-bold uppercase text-muted-foreground">К заказу</p>
             <p className="text-xl font-bold text-foreground">
-              {formatNumber(need)}{" "}
+              {need == null ? "Нет данных" : formatNumber(need)}{" "}
               <span className="text-xs font-normal text-muted-foreground">{item.unit}</span>
             </p>
             <p className="text-xs text-muted-foreground">
-              {formatMoney(cost)} ({formatMoney(unitPrice)}/{item.unit})
+              {cost == null || unitPrice == null ? "Стоимость не указана" : `${formatMoney(cost)} (${formatMoney(unitPrice)}/${item.unit})`}
             </p>
           </div>
           <Button onClick={close}>Понятно</Button>
