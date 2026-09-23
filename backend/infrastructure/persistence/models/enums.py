@@ -1,7 +1,5 @@
-from enum import Enum
+"""ORM uses the domain Enum classes instead of defining competing copies."""
 
-<<<<<<< HEAD
-=======
 from backend.domain.entities.enums import (
     CalculationRunStatus,
     ExportFormat,
@@ -9,115 +7,21 @@ from backend.domain.entities.enums import (
     RecommendationStatus,
     Urgency,
 )
+from backend.domain.enums import (
+    GrowthSource,
+    ImportSourceType,
+    ImportStatus,
+    MaterialRequirementStatus,
+    StockoutSource,
+    StringEnum,
+    TransactionType,
+    TransitStatus,
+    UserRole,
+)
 
->>>>>>> origin/main
-
-class StringEnum(str, Enum):
-    pass
-
-
-class UserRole(StringEnum):
-    BUYER = "buyer"
-    ADMIN = "admin"
-    VIEWER = "viewer"
-
-
-class ImportSourceType(StringEnum):
-    SALES = "sales"
-    MONTHLY_SALES = "monthly_sales"
-    INVENTORY = "inventory"
-    STOCKOUT = "stockout"
-    IN_TRANSIT = "in_transit"
-    SEASONALITY = "seasonality"
-    SUPPLIER_TERMS = "supplier_terms"
-    GROWTH = "growth"
-    MATERIAL_REQUIREMENTS = "material_requirements"
-
-
-class ImportStatus(StringEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class TransactionType(StringEnum):
-    SALE = "sale"
-    RETURN = "return"
-
-
-class StockoutSource(StringEnum):
-    IMPORTED = "imported"
-    INFERRED = "inferred"
-    MANUAL = "manual"
-
-
-class TransitStatus(StringEnum):
-    PLANNED = "planned"
-    IN_TRANSIT = "in_transit"
-    RECEIVED = "received"
-    CANCELLED = "cancelled"
-
-
-class GrowthSource(StringEnum):
-    CALCULATED = "calculated"
-    IMPORTED = "imported"
-    MANUAL = "manual"
-
-
-class MaterialRequirementStatus(StringEnum):
-    PLANNED = "planned"
-    FULFILLED = "fulfilled"
-    CANCELLED = "cancelled"
-
-
-<<<<<<< HEAD
-=======
 __all__ = [
-    "CalculationRunStatus",
-    "ExportFormat",
-    "GrowthSource",
-    "ImportSourceType",
-    "ImportStatus",
-    "MaterialRequirementStatus",
-    "PurchaseOrderStatus",
-    "RecommendationStatus",
-    "StockoutSource",
-    "TransactionType",
-    "TransitStatus",
-    "Urgency",
-    "UserRole",
+    "CalculationRunStatus", "ExportFormat", "GrowthSource", "ImportSourceType",
+    "ImportStatus", "MaterialRequirementStatus", "PurchaseOrderStatus",
+    "RecommendationStatus", "StockoutSource", "StringEnum", "TransactionType",
+    "TransitStatus", "Urgency", "UserRole",
 ]
->>>>>>> origin/main
-class CalculationRunStatus(StringEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class Urgency(StringEnum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-class RecommendationStatus(StringEnum):
-    SUGGESTED = "suggested"
-    ADJUSTED = "adjusted"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    CONVERTED_TO_ORDER = "converted_to_order"
-
-
-class PurchaseOrderStatus(StringEnum):
-    DRAFT = "draft"
-    APPROVED = "approved"
-    EXPORTED = "exported"
-    CANCELLED = "cancelled"
-
-
-class ExportFormat(StringEnum):
-    XLSX = "xlsx"
-    CSV = "csv"

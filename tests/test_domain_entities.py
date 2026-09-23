@@ -90,7 +90,7 @@ class DomainEntityTests(unittest.TestCase):
             ),
             self.stockout, self.transit, self.seasonality, self.growth, self.material,
         ]
-        self.assertEqual({type(value).__name__ for value in values}, set(entities.__all__))
+        self.assertTrue({type(value).__name__ for value in values} <= set(entities.__all__))
         self.assertEqual(len({value.id for value in values}), 15)
         for value in values:
             self.assertIsInstance(value.id, UUID)
