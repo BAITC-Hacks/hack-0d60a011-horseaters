@@ -3,6 +3,8 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from backend.domain.repositories.import_repository import ImportRepository
+from backend.domain.repositories.inventory_repository import InventoryRepository
+from backend.domain.repositories.order_repository import OrderRepository
 
 
 class Repository(Protocol):
@@ -19,7 +21,7 @@ class UnitOfWork(Protocol):
     def sales(self) -> Repository: ...
 
     @property
-    def inventory(self) -> Repository: ...
+    def inventory(self) -> InventoryRepository: ...
 
     @property
     def suppliers(self) -> Repository: ...
@@ -31,7 +33,7 @@ class UnitOfWork(Protocol):
     def recommendations(self) -> Repository: ...
 
     @property
-    def orders(self) -> Repository: ...
+    def orders(self) -> OrderRepository: ...
 
     def __enter__(self) -> Self: ...
 
