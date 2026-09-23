@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -29,6 +29,11 @@ class RunParameters(ReadModel):
     demand_source: DemandSource | None = None
     warehouse_id: UUID | None = None
     category_id: UUID | None = None
+    history_periods: int | None = None
+    forecast_period_days: int | None = None
+    safety_stock_days: int | None = None
+    demand_config: dict[str, str | int] | None = None
+    risk_policy: dict[str, str] | None = None
 
 
 class CalculationRunResponse(ReadModel):
@@ -46,6 +51,15 @@ class CalculationRunResponse(ReadModel):
     @classmethod
     def safe_error(cls, value):
         return {"code": "calculation_failed"} if value else None
+
+
+class DemandTrendPointResponse(ReadModel):
+    category_id: UUID | None
+    period_start: date
+    period_end: date
+    raw_demand: Decimal
+    cleaned_demand: Decimal
+    stockout_adjustment: Decimal
 
 
 class CalculationComponents(ReadModel):
@@ -131,6 +145,10 @@ class AdjustRecommendationRequest(RequestModel):
     version: int = Field(gt=0, strict=True)
 
 
+class AcceptRecommendationRequest(RequestModel):
+    version: int = Field(gt=0, strict=True)
+
+
 class AnomalyResponse(ReadModel):
     id: UUID
     sales_transaction_id: UUID
@@ -164,6 +182,7 @@ class ExplanationResponse(ReadModel):
     anomalies: list[AnomalyResponse]
     forecast: ForecastResponse
     text: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 class CreateOrdersRequest(RequestModel):

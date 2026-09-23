@@ -44,7 +44,7 @@ SOURCE_ALIASES: dict[ImportSourceType, dict[str, tuple[str, ...]]] = {
             "external_document_number", "номер_документа", "документ", "номер"
         ),
         "anonymous_customer_id": (
-            "anonymous_customer_id", "обезличенный_id_клиента", "id_клиента", "клиент_id"
+            "anonymous_customer_id", "обезличенный_id_клиента"
         ),
         "transaction_type": ("transaction_type", "тип_операции", "вид_операции"),
         "quantity": ("quantity", "количество", "кол_во", "объем"),
@@ -129,8 +129,10 @@ REQUIRED: dict[ImportSourceType, tuple[str, ...]] = {
 
 FORBIDDEN_PERSONAL_HEADERS = {
     "фио", "имя_клиента", "фамилия", "телефон", "email", "e_mail",
-    "адрес_клиента", "наименование_клиента", "клиент",
+    "адрес_клиента", "наименование_клиента", "клиент", "id_клиента", "клиент_id",
 }
+
+OPAQUE_CUSTOMER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}\Z")
 
 
 class ExcelImportReader:
@@ -296,6 +298,13 @@ class ExcelImportReader:
                 result[name] = int(result[name])
         if "is_primary" in result:
             result["is_primary"] = self._boolean(result["is_primary"])
+        if source is ImportSourceType.SALES and "anonymous_customer_id" in result:
+            customer_id = str(result["anonymous_customer_id"]).strip()
+            if (not OPAQUE_CUSTOMER_ID.fullmatch(customer_id) or
+                    re.fullmatch(r"\d{10,15}", customer_id)):
+                # Never echo the original value into validation errors or logs.
+                raise ValueError("anonymous_customer_id must be an opaque pseudonym, not contact data")
+            result["anonymous_customer_id"] = customer_id
 
         result.setdefault("product_name", str(result.get("sku", "")))
         result.setdefault("unit", "pcs")

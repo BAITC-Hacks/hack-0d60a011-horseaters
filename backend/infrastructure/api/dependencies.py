@@ -7,12 +7,14 @@ from backend.infrastructure.persistence.database import Database
 from backend.infrastructure.persistence.application_uow import create_application_uow_factory
 from backend.application.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 from backend.application.use_cases.adjust_recommendation import AdjustRecommendation
+from backend.application.use_cases.accept_recommendation import AcceptRecommendation
 from backend.application.use_cases.approve_order import ApproveOrder
 from backend.application.use_cases.create_orders import CreateOrders
 from backend.application.use_cases.download_order_export import DownloadOrderExport
 from backend.application.use_cases.explain_recommendation import ExplainRecommendation
 from backend.application.use_cases.export_order import ExportOrder
 from backend.application.use_cases.get_calculation_run import GetCalculationRun
+from backend.application.use_cases.get_demand_trends import GetDemandTrends
 from backend.application.use_cases.get_import_status import GetImportStatus
 from backend.application.use_cases.get_order import GetOrder
 from backend.application.use_cases.import_data import ImportData
@@ -76,6 +78,10 @@ def get_calculation_run(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -
     return GetCalculationRun(factory)
 
 
+def get_demand_trends(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -> GetDemandTrends:
+    return GetDemandTrends(factory)
+
+
 def get_list_recommendations(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -> ListRecommendations:
     return ListRecommendations(factory)
 
@@ -86,6 +92,10 @@ def get_explain_recommendation(factory: UnitOfWorkFactory = Depends(get_uow_fact
 
 def get_adjust_recommendation(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -> AdjustRecommendation:
     return AdjustRecommendation(factory)
+
+
+def get_accept_recommendation(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -> AcceptRecommendation:
+    return AcceptRecommendation(factory)
 
 
 def get_create_orders(factory: UnitOfWorkFactory = Depends(get_uow_factory)) -> CreateOrders:

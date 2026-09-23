@@ -33,6 +33,7 @@ def prepare_demand(
     stockouts: Sequence[StockoutPeriod] = (), snapshots: Sequence[InventorySnapshot] = (),
     growth_overrides: Mapping[tuple[UUID, UUID | None], GrowthAssumption] | None = None,
     config: DemandConfig = DemandConfig(),
+    allow_partial_final_month: bool = False,
 ) -> DemandPreparationResult:
     """Prepare complete UTC months; linked returns are known up to the inclusive cutoff.
 
@@ -42,9 +43,11 @@ def prepare_demand(
     """
     if not isinstance(source, DemandSource):
         raise TypeError("source must be DemandSource")
-    periods = calendar(start, end)
+    if allow_partial_final_month and source is DemandSource.MONTHLY_SALES:
+        raise ValueError("Monthly aggregates require complete calendar months")
+    periods = calendar(start, end, allow_partial_final_month=allow_partial_final_month)
     cutoff = utc(source_cutoff_at)
-    if midnight(end + timedelta(days=1)) > cutoff:
+    if (midnight(end) if allow_partial_final_month else midnight(end + timedelta(days=1))) > cutoff:
         raise ValueError("The historical calendar must be complete at source_cutoff_at")
     keys = [group.key for group in groups]
     if len(set(keys)) != len(keys):
@@ -73,9 +76,11 @@ def prepare_demand(
         context.rounding = ROUND_HALF_EVEN
         for group in sorted(groups, key=lambda item: (str(item.product.id), str(item.warehouse_id))):
             series.append(_prepare_group(group, periods, source, cutoff, selected, stockouts, snapshots,
-                                         (growth_overrides or {}).get(group.key), calculation_run_id, config))
+                                         (growth_overrides or {}).get(group.key), calculation_run_id, config,
+                                         allow_partial_final_month))
     parameters = {name: str(value) if isinstance(value, Decimal) else value for name, value in asdict(config).items()}
     parameters.update({"demand_source": source.value, "period_granularity": "calendar_month_utc",
+                       "partial_final_month": allow_partial_final_month,
                        "return_handling": ("linked_to_original_sale_unlinked_to_return_month"
                                            if source is DemandSource.TRANSACTIONS else "unavailable_monthly_aggregate"),
                        "pipeline_version": "ALG-01-05/v1", "decimal_precision": 28})
@@ -85,7 +90,8 @@ def prepare_demand(
     )
 
 
-def _prepare_group(group, periods, source, cutoff, selected, stockouts, snapshots, override, run_id, config):
+def _prepare_group(group, periods, source, cutoff, selected, stockouts, snapshots, override, run_id,
+                   config, partial_last):
     months = {lower: index for index, (lower, _) in enumerate(periods)}
     start, end = periods[0][0], periods[-1][1]
     raw, returns, anomaly_delta = ([ZERO] * len(periods) for _ in range(3))
@@ -181,9 +187,13 @@ def _prepare_group(group, periods, source, cutoff, selected, stockouts, snapshot
                 override.warehouse_id is not None and override.warehouse_id != group.warehouse_id or
                 override.valid_from > on_date or override.valid_to is not None and override.valid_to < on_date):
             raise ValueError("Growth assumption does not apply to the group at source_cutoff_at")
-    growth = estimate_growth(
-        [value / Decimal((upper - lower).days + 1) for value, (lower, upper) in zip(cleaned, periods)], config, override,
-    )
+    daily_rates = [value / Decimal((upper - lower).days + 1)
+                   for value, (lower, upper) in zip(cleaned, periods)]
+    # Today's incomplete month can drive the current forecast, but must not
+    # masquerade as a complete month in the sustained-growth comparison.
+    if partial_last:
+        daily_rates = daily_rates[:-1]
+    growth = estimate_growth(daily_rates, config, override)
     result_periods = []
     for index, (lower, upper) in enumerate(periods):
         calculated = cleaned[index] * growth.factor

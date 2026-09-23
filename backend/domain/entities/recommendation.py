@@ -125,11 +125,10 @@ class Recommendation:
         return adjustment
 
     def accept(self, *, changed_at: datetime | None = None) -> None:
-        if self.status in {
-            RecommendationStatus.REJECTED,
-            RecommendationStatus.CONVERTED_TO_ORDER,
-        }:
-            raise ValueError("closed recommendation cannot be accepted")
+        if self.status not in {RecommendationStatus.SUGGESTED, RecommendationStatus.ADJUSTED}:
+            raise InvalidEntityStateError("only a suggested or adjusted recommendation can be accepted")
+        if self.effective_quantity <= 0:
+            raise ValueError("only a positive recommendation can be accepted")
         change_time = changed_at or utc_now()
         require_aware(change_time, "changed_at")
         self.status = RecommendationStatus.ACCEPTED

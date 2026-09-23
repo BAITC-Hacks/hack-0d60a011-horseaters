@@ -7,14 +7,13 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pandas as pd
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.domain.entities.catalog import User
-from backend.domain.entities.enums import RecommendationStatus
 from backend.domain.enums import UserRole
 from backend.infrastructure.api.dependencies import get_current_user
 from backend.infrastructure.api.main import create_app
@@ -24,7 +23,6 @@ from backend.infrastructure.persistence.models import Base
 from backend.infrastructure.persistence.models.calculation import (
     CalculationRunImportModel,
     DemandForecastModel,
-    RecommendationModel,
 )
 from backend.infrastructure.persistence.models.catalog import UserModel
 from backend.infrastructure.persistence.models.orders import OrderExportModel, PurchaseOrderModel
@@ -96,6 +94,10 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
             self.assertEqual(len(run["import_batch_ids"]), 2)
             run_id = run["id"]
             self.assertEqual(client.get(f"/api/calculation-runs/{run_id}").status_code, 200)
+            trends = client.get(f"/api/calculation-runs/{run_id}/demand-trends")
+            self.assertEqual(trends.status_code, 200, trends.text)
+            self.assertEqual(len(trends.json()), 12)
+            self.assertTrue(any(float(point["raw_demand"]) > 0 for point in trends.json()))
 
             page_response = client.get(f"/api/calculation-runs/{run_id}/recommendations")
             self.assertEqual(page_response.status_code, 200, page_response.text)
@@ -107,6 +109,7 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
             explanation = client.get(f"/api/recommendations/{recommendation_id}/explain")
             self.assertEqual(explanation.status_code, 200, explanation.text)
             self.assertIn("formula", explanation.json())
+            self.assertEqual(explanation.json()["evidence"]["growth_source"], "calculated")
 
             adjusted_quantity = str(float(recommendation["recommended_quantity"]) + 5)
             adjustment = client.patch(f"/api/recommendations/{recommendation_id}", json={
@@ -121,12 +124,14 @@ class ApiEndToEndSmokeTests(unittest.TestCase):
             })
             self.assertEqual(stale.status_code, 409, stale.text)
 
-            # API-02 does not expose an accept endpoint yet. Bridge this one
-            # approval step at the persistence boundary; all other steps are HTTP.
-            with self.database.session() as session:
-                row = session.get(RecommendationModel, UUID(recommendation_id))
-                self.assertIsNotNone(row)
-                row.status = RecommendationStatus.ACCEPTED
+            accepted = client.post(f"/api/recommendations/{recommendation_id}/accept", json={
+                "version": adjustment.json()["version"],
+            })
+            self.assertEqual(accepted.status_code, 200, accepted.text)
+            self.assertEqual(accepted.json()["status"], "accepted")
+            self.assertEqual(client.post(f"/api/recommendations/{recommendation_id}/accept", json={
+                "version": adjustment.json()["version"],
+            }).status_code, 409)
 
             orders_response = client.post("/api/orders", json={"calculation_run_id": run_id})
             self.assertEqual(orders_response.status_code, 201, orders_response.text)

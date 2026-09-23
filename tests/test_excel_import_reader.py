@@ -127,6 +127,18 @@ class ExcelImportReaderTests(unittest.TestCase):
                 }],
             )
 
+    def test_customer_id_requires_explicit_anonymized_header_and_opaque_value(self):
+        row = {"Дата": "2026-09-01", "Артикул": "A-1", "Склад": "WH", "Количество": 1}
+        for header in ("ID клиента", "Клиент ID"):
+            with self.subTest(header=header), self.assertRaises(ExcelImportValidationError):
+                self.read(ImportSourceType.SALES, [{**row, header: "12345"}])
+        for value in ("buyer@example.com", "+77001234567", "77001234567", "Иван Иванов"):
+            with self.subTest(value=value), self.assertRaises(ExcelImportValidationError) as error:
+                self.read(ImportSourceType.SALES, [{**row, "Обезличенный ID клиента": value}])
+            self.assertNotIn(value, str(error.exception.issues))
+        parsed = self.read(ImportSourceType.SALES, [{**row, "Обезличенный ID клиента": "anon-42"}])
+        self.assertEqual(parsed.rows[0]["anonymous_customer_id"], "anon-42")
+
 
 if __name__ == "__main__":
     unittest.main()

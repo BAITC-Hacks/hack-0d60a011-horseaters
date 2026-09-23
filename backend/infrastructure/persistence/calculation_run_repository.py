@@ -121,6 +121,16 @@ class SqlAlchemyCalculationRunRepository:
         ).order_by(DemandForecastModel.forecast_period_start.desc()).limit(1))
         if model is None:
             return None
+        return self._forecast_entity(model)
+
+    def list_forecasts(self, run_id: UUID) -> list[DemandForecast]:
+        models = self._session.scalars(select(DemandForecastModel).where(
+            DemandForecastModel.calculation_run_id == run_id,
+        ).order_by(DemandForecastModel.product_id, DemandForecastModel.warehouse_id)).all()
+        return [self._forecast_entity(model) for model in models]
+
+    @staticmethod
+    def _forecast_entity(model: DemandForecastModel) -> DemandForecast:
         return DemandForecast(
             id=model.id, calculation_run_id=model.calculation_run_id,
             product_id=model.product_id, warehouse_id=model.warehouse_id,

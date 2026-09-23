@@ -175,6 +175,21 @@ class SqlAlchemyRecommendationRepository:
         ).values(status=RecommendationStatus.CONVERTED_TO_ORDER,
                  version=RecommendationModel.version + 1, updated_at=recommendation.updated_at), recommendation.id)
 
+    def save_acceptance(self, recommendation: Recommendation, *, expected_version: int) -> None:
+        if (recommendation.version != expected_version + 1 or
+                recommendation.status is not RecommendationStatus.ACCEPTED or
+                recommendation.effective_quantity <= 0):
+            raise ValueError("Expected a positive suggested/adjusted-to-accepted transition")
+        self._compare_and_swap(update(RecommendationModel).where(
+            RecommendationModel.id == recommendation.id,
+            RecommendationModel.version == expected_version,
+            RecommendationModel.status.in_((RecommendationStatus.SUGGESTED, RecommendationStatus.ADJUSTED)),
+            RecommendationModel.effective_quantity == recommendation.effective_quantity,
+            RecommendationModel.effective_quantity > 0, _not_ordered(),
+        ).values(status=RecommendationStatus.ACCEPTED,
+                 version=RecommendationModel.version + 1,
+                 updated_at=recommendation.updated_at), recommendation.id)
+
     def _compare_and_swap(self, statement, recommendation_id: UUID) -> None:
         result = self._session.execute(statement.execution_options(synchronize_session=False))
         if result.rowcount != 1:

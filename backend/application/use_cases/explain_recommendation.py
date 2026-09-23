@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 from uuid import UUID
 
@@ -17,6 +17,7 @@ class RecommendationExplanation:
     anomalies: list[DetectedAnomaly]
     forecast: DemandForecast
     text: str
+    evidence: Mapping[str, Any] = field(default_factory=dict)
 
 
 class ExplainRecommendation:
@@ -48,4 +49,8 @@ class ExplainRecommendation:
                          "rounded to MOQ/package_size"),
                 components=details, anomalies=anomalies, forecast=forecast,
                 text=recommendation.explanation,
+                evidence={key: forecast.details.get(key) for key in (
+                    "growth_source", "growth_reason", "growth_assumption_id",
+                    "customer_check", "limitations", "stockout_evidence", "period_anomalies",
+                )},
             )

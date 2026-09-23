@@ -20,15 +20,15 @@ def next_month(value: date) -> date:
     return date(value.year + value.month // 12, value.month % 12 + 1, 1)
 
 
-def calendar(start: date, end: date) -> tuple[tuple[date, date], ...]:
+def calendar(start: date, end: date, *, allow_partial_final_month: bool = False) -> tuple[tuple[date, date], ...]:
     if type(start) is not date or type(end) is not date:
         raise TypeError("Calendar bounds must be dates")
-    if start.day != 1 or end < start or end + timedelta(days=1) != next_month(end):
+    if start.day != 1 or end < start or (not allow_partial_final_month and end + timedelta(days=1) != next_month(end)):
         raise ValueError("Use complete calendar months: first day through last day inclusive")
     periods = []
     while start <= end:
         following = next_month(start)
-        periods.append((start, following - timedelta(days=1)))
+        periods.append((start, min(end, following - timedelta(days=1))))
         start = following
     return tuple(periods)
 

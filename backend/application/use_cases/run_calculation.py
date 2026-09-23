@@ -13,7 +13,7 @@ class RunCalculation:
     def __init__(
         self, uow_factory: UnitOfWorkFactory,
         pipeline: CalculationPipeline | None = None,
-        *, algorithm_version: str = "mvp-1",
+        *, algorithm_version: str = "mvp-2",
     ) -> None:
         self._uow_factory = uow_factory
         self._pipeline = pipeline or CalculationPipeline()
@@ -32,7 +32,8 @@ class RunCalculation:
             parameters={"horizon_days": command.horizon_days,
                         "demand_source": command.demand_source.value,
                         "warehouse_id": str(command.warehouse_id) if command.warehouse_id else None,
-                        "category_id": str(command.category_id) if command.category_id else None},
+                        "category_id": str(command.category_id) if command.category_id else None,
+                        **(self._pipeline.configuration() if isinstance(self._pipeline, CalculationPipeline) else {})},
             warehouse_id=command.warehouse_id,
             category_id=command.category_id,
         )
