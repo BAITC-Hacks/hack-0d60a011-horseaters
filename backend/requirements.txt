@@ -10,5 +10,5 @@ pandas>=2.2.0
 scipy>=1.13.0
 openpyxl>=3.1.0
 python-multipart>=0.0.9,<1.0.0
-openai>=1.75.0,<2.0.0
-cachetools>=5.0.0,<7.0.0
+openai>=3.19.0,<4.0.0
+cachetools>=7.2.0,<8.0.0

@@ -1,5 +1,4 @@
 import tempfile
-import traceback
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.infrastructure.api.dependencies import get_db
 from backend.infrastructure.api.main import create_app
 from backend.infrastructure.config.settings import Settings
-from backend.infrastructure.persistence.database import Database, DatabaseConnectionError
+from backend.infrastructure.persistence.database import Database
 
 
 POSTGRES_URL = "postgresql+psycopg://test_user:unused@localhost:5432/warehouse_test"
@@ -104,7 +103,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(database.engine.pool.checkedout(), 0)
         dispose.assert_called_once_with()
 
-    def test_startup_failure_disposes_engine(self):
+    def test_database_failure_keeps_liveness_and_reports_readiness(self):
         app = create_app(Settings(database_url=POSTGRES_URL, _env_file=None))
         database = Database(POSTGRES_URL)
         self.addCleanup(database.dispose)
@@ -116,15 +115,14 @@ class DatabaseTests(unittest.TestCase):
                 side_effect=psycopg.OperationalError(f"Connection failed: {POSTGRES_URL}"),
             ) as connect,
         ):
-            with self.assertRaisesRegex(DatabaseConnectionError, "Не удалось подключиться") as error:
-                with TestClient(app):
-                    self.fail("Startup must fail")
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/health").status_code, 200)
+                response = client.get("/health/db")
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()["detail"]["code"], "http_503")
+                self.assertNotIn("unused", response.text)
             dispose.assert_called_once_with()
             connect.assert_called_once()
-            rendered = "".join(traceback.format_exception(error.exception))
-            self.assertIn("DATABASE_URL", rendered)
-            self.assertNotIn("unused", rendered)
-            self.assertNotIn(POSTGRES_URL, rendered)
 
 
 if __name__ == "__main__":

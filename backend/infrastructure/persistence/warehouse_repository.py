@@ -13,9 +13,13 @@ class SqlAlchemyWarehouseRepository:
         self._session = session
 
     def list_active_ids(self) -> list[UUID]:
-        return list(self._session.scalars(
-            select(WarehouseModel.id).where(WarehouseModel.is_active.is_(True)).order_by(WarehouseModel.id)
-        ))
+        return list(
+            self._session.scalars(
+                select(WarehouseModel.id)
+                .where(WarehouseModel.is_active.is_(True))
+                .order_by(WarehouseModel.id)
+            )
+        )
 
     def get_by_id(self, warehouse_id: UUID) -> Warehouse | None:
         model = self._session.get(WarehouseModel, warehouse_id)

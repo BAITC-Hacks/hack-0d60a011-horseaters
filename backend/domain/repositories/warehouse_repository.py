@@ -1,7 +1,6 @@
 from typing import Protocol
 from uuid import UUID
 
-
 from backend.domain.entities.catalog import Warehouse
 
 

@@ -1,25 +1,31 @@
 from contextlib import asynccontextmanager
-import os
+from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from backend.infrastructure.config.settings import Settings
+from backend.infrastructure.config.settings import CorsSettings, Settings
 from backend.infrastructure.api.routers.ai import router as ai_router
 from backend.infrastructure.api.routers.health import router as health_router
 from backend.infrastructure.api.routers.procurement import router as procurement_router
 from backend.infrastructure.api.routers.imports import router as imports_router
+from backend.infrastructure.api.routers.orders import router as orders_router
+from backend.infrastructure.api.exceptions import ApiError
+from backend.infrastructure.api.schemas.errors import error_response
 from backend.infrastructure.persistence.database import Database
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    cors_config = settings if settings is not None else CorsSettings()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         config = settings if settings is not None else Settings()
         app.state.settings = config
         database = Database(config.database_url, echo=config.db_echo)
         try:
-            database.check_connection()
             app.state.database = database
             yield
         finally:
@@ -27,28 +33,87 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Warehouse replenishment", lifespan=lifespan)
 
-    # Configure CORS for frontend access
-    cors_origins_env = os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    )
-    cors_origins = [
-        origin.strip() for origin in cors_origins_env.split(",") if origin.strip()
-    ]
-    if not cors_origins:
-        cors_origins = ["*"]
-
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
+        allow_origins=list(cors_config.frontend_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+
+    @app.middleware("http")
+    async def attach_request_id(request: Request, call_next):
+        supplied = request.headers.get("X-Request-ID", "")
+        try:
+            request_id = str(UUID(supplied))
+        except ValueError:
+            request_id = str(uuid4())
+        request.state.request_id = request_id
+        try:
+            response = await call_next(request)
+        except Exception:
+            response = JSONResponse(
+                status_code=500,
+                content=error_response(
+                    code="internal_error", message="Internal server error",
+                    request_id=request_id,
+                ),
+            )
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, error: HTTPException):
+        if isinstance(error.detail, dict):
+            detail = dict(error.detail)
+            code = str(detail.pop("code", f"http_{error.status_code}"))
+            message = str(detail.pop("message", code.replace("_", " ")))
+        else:
+            code = f"http_{error.status_code}"
+            message = str(error.detail)
+            detail = {}
+        return JSONResponse(
+            status_code=error.status_code,
+            content=error_response(
+                code=code, message=message,
+                request_id=request.state.request_id, context=detail,
+            ),
+            headers=error.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError):
+        issues = [
+            {"loc": [str(part) for part in issue["loc"]],
+             "type": issue["type"], "message": issue["msg"]}
+            for issue in error.errors()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content=error_response(
+                code="request_validation_error", message="Invalid request",
+                request_id=request.state.request_id,
+                context={"issues": issues},
+            ),
+        )
+
+    @app.exception_handler(ApiError)
+    async def api_error(request: Request, error: ApiError):
+        return JSONResponse(
+            status_code=error.status_code,
+            content=error_response(
+                code=error.code, message=error.message,
+                request_id=request.state.request_id,
+                context=error.context,
+            ),
+        )
 
     app.include_router(health_router)
     app.include_router(procurement_router)
     app.include_router(ai_router)
     app.include_router(imports_router)
+    app.include_router(orders_router)
 
     # Versioned liveness endpoint used by Docker and orchestration.
     @app.get("/api/v1/health", tags=["system"])
