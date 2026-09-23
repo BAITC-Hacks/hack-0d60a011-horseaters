@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.infrastructure.config.settings import Settings
 from backend.infrastructure.api.routers.health import router as health_router
+from backend.infrastructure.api.routers.imports import router as imports_router
 from backend.infrastructure.persistence.database import Database
 
 
@@ -42,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(imports_router)
 
     # Versioned liveness endpoint used by Docker and orchestration.
     @app.get("/api/v1/health", tags=["system"])
