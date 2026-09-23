@@ -13,6 +13,22 @@ export const inventoryItemSchema = z.object({
   leadDays: z.number().int().positive(),
   packSize: z.number().int().positive(),
   unitCost: z.number().nonnegative(),
+  inTransit: z.number().int().nonnegative(),
+  materialNeed: z.number().int().nonnegative(),
+  moq: z.number().int().nonnegative(),
+  supplierMinOrder: z.number().nonnegative(),
+  warehouse: z.string().min(1),
+  riskScore: z.number().min(0).max(1),
+  anomalyCount: z.number().int().nonnegative(),
+  anomalyAdjustment: z.number(),
+  stockoutAdjustment: z.number().nonnegative(),
+  growthFactor: z.number().positive(),
+  seasonalityIndex: z.number().positive(),
+  explanation: z.string().min(1),
+  status: z.enum(["suggested", "approved"]),
+  approvedQuantity: z.number().int().nonnegative().nullable(),
+  approvedAt: z.iso.datetime().nullable(),
+  approvedBy: z.string().min(1).nullable(),
 });
 
 export const inventoryListSchema = z.array(inventoryItemSchema);
