@@ -2,12 +2,23 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { inventoryQueryOptions } from "@/entities/inventory";
+import { formatMoney, formatNumber } from "@/shared/lib";
+import { Card, ErrorMessage, Skeleton } from "@/shared/ui";
 import { AppShell } from "@/widgets/app-shell";
-import { AbcXyzMatrix } from "@/widgets/abc-xyz-matrix";
-import { AnomalyLog } from "@/widgets/anomaly-log";
-import { DemandAnalytics } from "@/widgets/demand-analytics";
 
 export function AnalyticsPage() {
-  const { data = [], isError, error } = useQuery(inventoryQueryOptions());
-  return <AppShell><header className="mb-6"><p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Доказательная база прогноза</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Аналитика спроса и аномалий</h1><p className="mt-2 text-sm text-muted-foreground">Разбирайте очищенный спрос, периоды дефицита и устойчивость номенклатуры.</p></header>{isError ? <p role="alert" className="rounded-xl bg-red-500/10 p-4 text-sm text-red-500">{error instanceof Error ? error.message : "Не удалось загрузить аналитику."}</p> : <div className="space-y-5"><DemandAnalytics items={data} /><div className="grid gap-5 xl:grid-cols-2"><AbcXyzMatrix items={data} /><AnomalyLog items={data} /></div></div>}</AppShell>;
+  const query = useQuery(inventoryQueryOptions());
+  const items = query.data ?? [];
+  const total = items.reduce((sum, item) => sum + item.total_cost, 0);
+  const critical = items.filter((item) => item.urgency === "CRITICAL").length;
+  const outlierFlags = items.filter((item) => item.has_whale_outlier).length;
+
+  return <AppShell><header className="mb-6"><h1 className="text-3xl font-bold">Аналитика рекомендаций</h1><p className="mt-2 text-sm text-muted-foreground">Показатели из текущего ответа API закупок.</p></header>
+    {query.isPending ? <div className="grid gap-4 sm:grid-cols-3"><Skeleton className="h-36" /><Skeleton className="h-36" /><Skeleton className="h-36" /></div> : query.isError ? <ErrorMessage error={query.error} onRetry={() => void query.refetch()} /> : <div className="grid gap-4 sm:grid-cols-3">
+      <Card className="p-5"><p className="text-xs text-muted-foreground">Сумма рекомендаций</p><strong className="mt-2 block text-2xl">{formatMoney(total)}</strong></Card>
+      <Card className="p-5"><p className="text-xs text-muted-foreground">Критическая срочность</p><strong className="mt-2 block text-2xl">{formatNumber(critical)}</strong></Card>
+      <Card className="p-5"><p className="text-xs text-muted-foreground">Позиций с признаком выброса</p><strong className="mt-2 block text-2xl">{formatNumber(outlierFlags)}</strong></Card>
+    </div>}
+    <Card className="mt-5 p-5 text-sm text-muted-foreground">История продаж, помесячные графики и журнал выбросов появятся после публикации соответствующих API. Текущий ответ содержит только признак выброса по позиции.</Card>
+  </AppShell>;
 }

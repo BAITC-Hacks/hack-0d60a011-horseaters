@@ -1,1 +1,1 @@
-export { ApproveAction } from "./ui/approve-action";
+export { ApproveAction, ApproveOrderButton } from "./ui/approve-action";
