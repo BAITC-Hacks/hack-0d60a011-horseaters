@@ -1,8 +1,17 @@
+from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
 from backend.domain.entities.enums import RecommendationStatus, Urgency
-from backend.domain.entities.recommendation import Recommendation
+from backend.domain.entities.recommendation import Recommendation, RecommendationAdjustment
+
+
+class RecommendationNotFoundError(RuntimeError):
+    pass
+
+
+class RecommendationConflictError(RuntimeError):
+    """The recommendation was changed or ordered by another operation."""
 
 
 class RecommendationRepository(Protocol):
@@ -26,3 +35,20 @@ class RecommendationRepository(Protocol):
     def add_many(self, recommendations: list[Recommendation]) -> None: ...
 
     def count_for_run(self, run_id: UUID) -> int: ...
+
+    def list_orderable(self, calculation_run_id: UUID) -> Sequence[Recommendation]:
+        """Accepted, positive, not yet ordered; deterministic ID order."""
+        ...
+
+    def save_adjustment(
+        self, recommendation: Recommendation, adjustment: RecommendationAdjustment,
+        *, expected_version: int,
+    ) -> None:
+        """Compare-and-swap version/status and append audit in the caller's transaction."""
+        ...
+
+    def mark_converted(self, recommendation: Recommendation, *, expected_version: int) -> None:
+        """Atomically claim an accepted recommendation before inserting its order item."""
+        ...
+
+    def list_adjustments(self, recommendation_id: UUID) -> Sequence[RecommendationAdjustment]: ...

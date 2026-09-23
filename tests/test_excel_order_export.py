@@ -9,7 +9,6 @@ from uuid import uuid4
 from openpyxl import load_workbook
 
 from backend.application.dto.order import OrderExportRow
-from backend.application.dto.order import OrderExportCommand
 from backend.application.use_cases.export_order import ExportOrder, OrderNotExportableError
 from backend.domain.entities.catalog import Supplier, SupplierProduct, Warehouse
 from backend.domain.entities.product import Product
@@ -150,20 +149,24 @@ class ExportOrderUseCaseTests(unittest.TestCase):
         uow = self.uow()
         exporter = _CapturingExporter()
         result = ExportOrder(lambda: uow, exporter).execute(
-            OrderExportCommand(order_id=self.order.id, user_id=self.user_id)
+            self.order.id, user_id=self.user_id
         )
 
         self.assertTrue(uow.committed)
-        self.assertEqual(result.file_name, "order-PO-2026-0001.xlsx")
-        self.assertEqual(result.checksum, sha256(b"xlsx-content").hexdigest())
+        self.assertEqual(result.metadata.file_name, "order-PO-2026-0001.xlsx")
+        self.assertEqual(
+            result.metadata.file_checksum, sha256(b"xlsx-content").hexdigest()
+        )
         self.assertEqual(exporter.rows[0].delivery_date, date(2026, 10, 7))
         self.assertEqual(exporter.rows[0].total_amount, Decimal("250.00"))
-        self.assertEqual(uow.orders.export.file_checksum, result.checksum)
+        self.assertEqual(
+            uow.orders.export.file_checksum, result.metadata.file_checksum
+        )
 
     def test_draft_order_cannot_be_exported(self):
         with self.assertRaises(OrderNotExportableError):
             ExportOrder(lambda: self.uow(), _CapturingExporter()).execute(
-                OrderExportCommand(order_id=self.order.id, user_id=self.user_id)
+                self.order.id, user_id=self.user_id
             )
 
 

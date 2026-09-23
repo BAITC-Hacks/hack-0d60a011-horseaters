@@ -1,15 +1,8 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from uuid import UUID
 
 from backend.domain.entities.order_export import OrderExport
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class OrderExportCommand:
-    order_id: UUID
-    user_id: UUID
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -26,10 +19,8 @@ class OrderExportRow:
     delivery_date: date
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ExportedOrderFile:
-    content: bytes
-    file_name: str
-    checksum: str
-    created_at: datetime
+@dataclass(frozen=True, slots=True)
+class ExportedOrder:
     metadata: OrderExport
+    content: bytes
+    media_type: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

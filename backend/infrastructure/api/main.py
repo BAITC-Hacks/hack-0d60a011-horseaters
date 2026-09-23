@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.infrastructure.config.settings import CorsSettings, Settings
+from backend.infrastructure.api.routers.ai import router as ai_router
 from backend.infrastructure.api.routers.health import router as health_router
+from backend.infrastructure.api.routers.procurement import router as procurement_router
 from backend.infrastructure.api.routers.imports import router as imports_router
 from backend.infrastructure.api.routers.orders import router as orders_router
 from backend.infrastructure.api.exceptions import ApiError
@@ -21,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         config = settings if settings is not None else Settings()
+        app.state.settings = config
         database = Database(config.database_url, echo=config.db_echo)
         try:
             app.state.database = database
@@ -107,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health_router)
+    app.include_router(procurement_router)
+    app.include_router(ai_router)
     app.include_router(imports_router)
     app.include_router(orders_router)
 

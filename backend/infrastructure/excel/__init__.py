@@ -1,9 +1,14 @@
 from .readers import ExcelImportReader, ExcelImportValidationError
-from .exporter import ORDER_EXPORT_COLUMNS, OpenpyxlOrderWorkbookExporter
+from .exporter import (
+    ORDER_EXPORT_COLUMNS,
+    OpenpyxlOrderWorkbookExporter,
+    XlsxOrderExporter,
+)
 
 __all__ = [
     "ExcelImportReader",
     "ExcelImportValidationError",
     "OpenpyxlOrderWorkbookExporter",
     "ORDER_EXPORT_COLUMNS",
+    "XlsxOrderExporter",
 ]
