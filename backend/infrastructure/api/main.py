@@ -11,11 +11,11 @@ from backend.infrastructure.api.routers.ai import router as ai_router
 from backend.infrastructure.api.routers.health import router as health_router
 from backend.infrastructure.api.routers.procurement import router as procurement_router
 from backend.infrastructure.api.routers.imports import router as imports_router
+from backend.infrastructure.api.routers.orders import router as orders_router
 from backend.infrastructure.api.exceptions import ApiError
 from backend.infrastructure.api.schemas.errors import error_response
 from backend.infrastructure.api.routers.calculation_runs import router as calculation_runs_router
 from backend.infrastructure.api.routers.recommendations import router as recommendations_router
-from backend.infrastructure.api.routers.orders import router as orders_router
 from backend.infrastructure.api.errors import install_error_handlers
 from backend.infrastructure.excel.artifact_store import FileExportArtifactStore
 from backend.infrastructure.persistence.database import Database

@@ -37,8 +37,8 @@ from backend.domain.repositories.recommendation_repository import Recommendation
 from backend.infrastructure.excel.exporter import XlsxOrderExporter
 from backend.infrastructure.persistence.models import (
     Base, CalculationRunModel, OrderExportModel, ProductModel, PurchaseOrderItemModel,
-    PurchaseOrderModel, RecommendationAdjustmentModel, RecommendationModel, SupplierModel,
-    UserModel, WarehouseModel,
+    PurchaseOrderModel, RecommendationAdjustmentModel, RecommendationModel,
+    SupplierModel, SupplierProductModel, UserModel, WarehouseModel,
 )
 from backend.infrastructure.persistence.order_repository import SqlAlchemyOrderRepository
 from backend.infrastructure.persistence.product_repository import SqlAlchemyProductRepository
@@ -85,6 +85,12 @@ class OrderUseCaseTests(unittest.TestCase):
                 session.execute(WarehouseModel.__table__.insert().values(id=warehouse, code=str(warehouse), name="Warehouse"))
             session.execute(ProductModel.__table__.insert().values(
                 id=self.product, sku="=literal-sku", name="Product", unit="pcs"))
+            for supplier in (self.supplier, self.other_supplier):
+                session.execute(SupplierProductModel.__table__.insert().values(
+                    id=uuid4(), supplier_id=supplier, product_id=self.product,
+                    moq=D(10), package_size=D(5), lead_time_days=14,
+                    priority=100, is_primary=supplier == self.supplier,
+                ))
             session.execute(CalculationRunModel.__table__.insert().values(
                 id=self.run, status=CalculationRunStatus.COMPLETED, started_by=self.user,
                 forecast_horizon_days=30, source_cutoff_at=self.now, algorithm_version="test",
@@ -305,12 +311,13 @@ class OrderUseCaseTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(result.content), data_only=False)
         try:
             sheet = workbook.active
-            self.assertEqual(sheet["B3"].value, str(self.supplier))
-            self.assertEqual(sheet["B5"].value, str(self.warehouse))
-            self.assertEqual(sheet["A10"].value, "=literal-sku")
-            self.assertEqual(sheet["A10"].data_type, "s")
-            self.assertEqual(sheet["D10"].value, "20.0000")
-            self.assertEqual(sheet["E10"].value, "15.0000")
+            self.assertEqual(sheet["B2"].value, "Supplier")
+            self.assertEqual(sheet["C2"].value, "Warehouse")
+            self.assertEqual(sheet["D2"].value, "=literal-sku")
+            self.assertEqual(sheet["D2"].data_type, "s")
+            self.assertEqual(sheet["F2"].value, 20)
+            self.assertEqual(sheet["G2"].value, 15)
+            self.assertIsInstance(sheet["J2"].value, datetime)
         finally:
             workbook.close()
         stored = self.load_order(order.id)

@@ -13,6 +13,7 @@ from backend.application.dto.calculation import CalculationRunResult
 from backend.application.dto.imports import ImportFileResult
 from backend.application.dto.order import ExportedOrder
 from backend.application.use_cases.explain_recommendation import RecommendationExplanation
+from backend.application.use_cases.export_order import OrderExportReferenceError, OrderNotExportableError
 from backend.application.use_cases.list_recommendations import RecommendationPage
 from backend.domain.entities.catalog import User
 from backend.domain.entities.demand_forecast import DemandForecast
@@ -243,8 +244,11 @@ class WorkflowApiTests(unittest.TestCase):
         self.mocks["export_order"].execute.assert_not_called()
 
     def test_export_status_conflict_and_no_file_yet(self):
-        self.mocks["export_order"].execute.side_effect = InvalidEntityStateError("approved required")
-        self.assertEqual(self.client.post(f"/api/orders/{self.order.id}/export").status_code, 409)
+        for error_type in (InvalidEntityStateError, OrderNotExportableError, OrderExportReferenceError):
+            self.mocks["export_order"].execute.side_effect = error_type("secret diagnostic")
+            response = self.client.post(f"/api/orders/{self.order.id}/export")
+            self.assertEqual(response.status_code, 409)
+            self.assertNotIn("secret", response.text)
         self.mocks["download_export"].execute.side_effect = LookupError("not exported")
         self.assertEqual(self.client.get(f"/api/orders/{self.order.id}/export").status_code, 404)
 

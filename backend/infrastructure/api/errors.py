@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.application.ports.export_artifacts import ExportArtifactUnavailableError
 from backend.application.use_cases.import_file import InvalidImportFileError
+from backend.application.use_cases.export_order import OrderExportReferenceError
 from backend.domain.errors import InvalidEntityStateError
 from backend.domain.repositories.import_repository import DuplicateImportError, InvalidImportStatusTransitionError
 from backend.domain.repositories.order_repository import (
@@ -43,7 +44,8 @@ def invoke(operation: Callable[..., T], *args, **kwargs) -> T:
     except (RecommendationNotFoundError, OrderNotFoundError, ImportUserNotFoundError):
         raise HTTPException(404, detail={"code": "not_found"}) from None
     except (RecommendationConflictError, InvalidEntityStateError, InvalidOrderPersistenceStateError,
-            DuplicateOrderNumberError, RecommendationAlreadyOrderedError, InvalidImportStatusTransitionError):
+            DuplicateOrderNumberError, RecommendationAlreadyOrderedError, InvalidImportStatusTransitionError,
+            OrderExportReferenceError):
         raise HTTPException(409, detail={"code": "state_conflict"}) from None
     except DuplicateImportError:
         raise HTTPException(409, detail={"code": "duplicate_import"}) from None
