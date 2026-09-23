@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(repr=False)
+    db_echo: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -38,6 +39,8 @@ class Settings(BaseSettings):
     @classmethod
     def validate_database_url(cls, value: str) -> str:
         value = value.strip()
+        if value.startswith("postgresql://"):
+            value = value.replace("postgresql://", "postgresql+psycopg://", 1)
         message = (
             "DATABASE_URL должен быть корректным URL PostgreSQL с драйвером "
             "psycopg: postgresql+psycopg://user:password@localhost:5432/hackalem"

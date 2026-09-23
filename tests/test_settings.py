@@ -27,7 +27,6 @@ class SettingsTests(unittest.TestCase):
     def test_rejects_other_drivers_and_invalid_urls(self):
         for value in (
             "sqlite:///warehouse.db",
-            "postgresql://user:secret@localhost/warehouse",
             "postgresql+psycopg2://user:secret@localhost/warehouse",
             "postgresql+psycopg://user:secret@localhost:invalid/warehouse",
             "invalid-secret",
@@ -52,6 +51,23 @@ class SettingsTests(unittest.TestCase):
     def test_settings_repr_hides_credentials(self):
         settings = Settings(database_url=POSTGRES_URL, _env_file=None)
         self.assertNotIn("unused", repr(settings))
+
+    def test_plain_postgresql_url_is_normalized_to_psycopg(self):
+        plain_url = "postgresql://user:password@localhost:5432/warehouse"
+        settings = Settings(database_url=plain_url, _env_file=None)
+        self.assertEqual(
+            settings.database_url,
+            "postgresql+psycopg://user:password@localhost:5432/warehouse",
+        )
+
+    def test_db_echo_defaults_to_false_and_accepts_environment_value(self):
+        self.assertFalse(Settings(database_url=POSTGRES_URL, _env_file=None).db_echo)
+        settings = Settings(
+            database_url=POSTGRES_URL,
+            db_echo="true",
+            _env_file=None,
+        )
+        self.assertTrue(settings.db_echo)
 
 
 if __name__ == "__main__":
