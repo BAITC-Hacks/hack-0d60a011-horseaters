@@ -7,10 +7,10 @@ import { useOrderQuantityStore } from "@/features/adjust-order-quantity";
 import { useAiStore } from "@/features/ai-analysis";
 import { exportOrderCsv } from "@/features/export-order";
 import { useSelectionStore } from "@/features/select-items";
-import { formatMoney, formatNumber } from "@/shared/lib";
-import { Button, Card } from "@/shared/ui";
+import { formatMoney } from "@/shared/lib";
+import { Card } from "@/shared/ui";
 
-export function OrderSummary({ items }: { items: InventoryItem[] }) {
+export function OrderSummary({ items, days }: { items: InventoryItem[]; days: number }) {
   const selectedIds = useSelectionStore((state) => state.selectedIds);
   const quantityById = useOrderQuantityStore((state) => state.quantityById);
   const openLetter = useAiStore((state) => state.openLetterModal);

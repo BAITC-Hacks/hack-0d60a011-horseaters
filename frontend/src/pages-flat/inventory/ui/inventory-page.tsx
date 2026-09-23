@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine, ArrowRight, Mail, Plus, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { inventoryQueryOptions } from "@/entities/inventory";
+import { getStockStatus, getSuggestedQuantity, inventoryQueryOptions } from "@/entities/inventory";
 import { useOrderQuantityStore } from "@/features/adjust-order-quantity";
 import {
   AiExecutiveBanner,
@@ -15,18 +15,20 @@ import { EditItemDialog, useEditStore } from "@/features/edit-inventory-item";
 import { exportOrderCsv } from "@/features/export-order";
 import { FilterBar, filterInventory, type InventoryFilter } from "@/features/filter-inventory";
 import { useSelectionStore } from "@/features/select-items";
+import { useHorizonStore } from "@/features/set-horizon";
 import { Button, Card } from "@/shared/ui";
 import { AppShell } from "@/widgets/app-shell";
 import { InventoryTable } from "@/widgets/inventory-table";
 import { OrderSummary } from "@/widgets/order-summary";
 import { OverviewCards } from "@/widgets/overview-cards";
 
-export function InventoryPage() {
+export function InventoryPage({ initialSearch = "" }: { initialSearch?: string }) {
   const { data = [], isPending, isError, error, refetch, isFetching } = useQuery(inventoryQueryOptions());
-  const [filter, setFilter] = useState<InventoryFilter>({ search: "", status: "all", supplier: "all" });
-  const [notice, setNotice] = useState("");
-  const editingId = useEditStore((state) => state.editingId);
+  const [filter, setFilter] = useState<InventoryFilter>({ search: initialSearch.slice(0, 120), status: "all", supplier: "all", category: "all" });
+  const days = useHorizonStore((state) => state.days);
   const selectedIds = useSelectionStore((state) => state.selectedIds);
+  const selectMany = useSelectionStore((state) => state.selectMany);
+  const clearSelection = useSelectionStore((state) => state.clear);
   const quantityById = useOrderQuantityStore((state) => state.quantityById);
   const openLetter = useAiStore((state) => state.openLetterModal);
 
@@ -35,7 +37,20 @@ export function InventoryPage() {
     [data]
   );
   const filtered = useMemo(() => filterInventory(data, filter), [data, filter]);
-  const editingItem = data.find((item) => item.id === editingId) ?? null;
+  const explainedItem = data.find((item) => item.id === explainedId) ?? null;
+  const tabCounts = {
+    all: data.length,
+    critical: data.filter((item) => getStockStatus(item) === "critical").length,
+    transit: data.filter((item) => item.inTransit > 0).length,
+    healthy: data.filter((item) => getStockStatus(item) === "healthy").length,
+  };
+  const quantities = Object.fromEntries(data.map((item) => [item.id, quantityById[item.id] ?? getSuggestedQuantity(item, days)]));
+  const tabs = [
+    { key: "all" as const, label: "Все", count: tabCounts.all },
+    { key: "critical" as const, label: "Критично", count: tabCounts.critical },
+    { key: "transit" as const, label: "В пути", count: tabCounts.transit },
+    { key: "healthy" as const, label: "Норма", count: tabCounts.healthy },
+  ];
 
   function download() {
     const scoped = selectedIds.length > 0 ? filtered.filter((item) => selectedIds.includes(item.id)) : filtered;

@@ -1,5 +1,26 @@
 import type { InventoryItem } from "../model";
 
+type DemoItem = Pick<InventoryItem,
+  "id" | "sku" | "name" | "category" | "supplier" | "unit" | "stock" | "minStock" |
+  "demand30" | "leadDays" | "packSize" | "unitCost" | "inTransit" | "moq" |
+  "supplierMinOrder" | "riskScore" | "anomalyCount" | "anomalyAdjustment" |
+  "stockoutAdjustment" | "explanation"
+> & Partial<Pick<InventoryItem, "materialNeed" | "warehouse" | "growthFactor" | "seasonalityIndex" | "status">>;
+
+function item(input: DemoItem): InventoryItem {
+  return {
+    materialNeed: 0,
+    warehouse: "Алматы",
+    growthFactor: 1.04,
+    seasonalityIndex: 1.08,
+    status: "suggested",
+    approvedQuantity: null,
+    approvedAt: null,
+    approvedBy: null,
+    ...input,
+  };
+}
+
 export const demoInventory: InventoryItem[] = [
   {
     id: "010500004_",

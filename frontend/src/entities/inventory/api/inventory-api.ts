@@ -21,7 +21,8 @@ export function inventoryQueryOptions() {
   return queryOptions({
     queryKey: inventoryKeys.list(),
     queryFn: getInventory,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -117,4 +118,26 @@ export async function updateInventoryItem(
 
   demoRows = demoRows.map((item) => (item.id === id ? updated : item));
   return { ...updated };
+}
+
+export async function approveInventoryItems(quantities: Record<string, number>): Promise<InventoryItem[]> {
+  const ids = Object.keys(quantities);
+  if (ids.length === 0) throw new Error("Выберите хотя бы одну позицию.");
+  if (demoMode) {
+    readDemoRows();
+    for (const id of ids) {
+      const item = demoRows.find((row) => row.id === id);
+      if (!item) throw new Error(`Позиция ${id} не найдена.`);
+      if (item.status === "approved") throw new Error(`Позиция ${item.sku} уже утверждена.`);
+      const quantity = quantities[id];
+      if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity < item.moq || quantity % item.packSize !== 0) {
+        throw new Error(`Количество для ${item.sku} должно быть положительным, не меньше MOQ и кратным упаковке ${item.packSize}.`);
+      }
+    }
+    const approvedAt = new Date().toISOString();
+    demoRows = demoRows.map((item) => ids.includes(item.id) ? { ...item, status: "approved" as const, approvedQuantity: quantities[item.id], approvedAt, approvedBy: "Менеджер закупок (демо)" } : item);
+    saveDemoRows();
+    return demoRows.filter((item) => ids.includes(item.id));
+  }
+  throw new Error("Утверждение через FastAPI будет доступно после публикации маршрутов заказов.");
 }

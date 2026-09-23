@@ -23,7 +23,7 @@ const statusCopy = {
   healthy: { label: "NORMAL", tone: "green" as const, dot: "bg-emerald-400" },
 };
 
-export function InventoryTable({ items }: { items: InventoryItem[] }) {
+export function InventoryTable({ items, days }: { items: InventoryItem[]; days: number }) {
   const selectedIds = useSelectionStore((state) => state.selectedIds);
   const toggle = useSelectionStore((state) => state.toggle);
   const selectMany = useSelectionStore((state) => state.selectMany);

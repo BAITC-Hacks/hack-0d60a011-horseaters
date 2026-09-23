@@ -8,8 +8,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin", "cyr
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "cyrillic"] });
 
 export const metadata: Metadata = {
-  title: "Stockwise — управление запасами",
-  description: "Планирование закупок и контроль складских остатков",
+  title: "Электрокомплект — планирование закупок",
+  description: "Рекомендации к закупке, аналитика спроса и заказы поставщикам",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

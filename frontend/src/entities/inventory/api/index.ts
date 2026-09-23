@@ -1,1 +1,1 @@
-export { inventoryKeys, inventoryQueryOptions, updateInventoryItem } from "./inventory-api";
+export { approveInventoryItems, inventoryKeys, inventoryQueryOptions, updateInventoryItem } from "./inventory-api";
