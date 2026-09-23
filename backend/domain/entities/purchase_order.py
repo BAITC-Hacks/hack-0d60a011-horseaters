@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from .enums import PurchaseOrderStatus
+from backend.domain.value_objects.quantity import validate_quantity
 
 
 def utc_now() -> datetime:
@@ -23,14 +24,12 @@ class PurchaseOrderItem:
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
-        if self.recommended_quantity < 0:
-            raise ValueError("recommended_quantity must be nonnegative")
-        if self.approved_quantity <= 0:
-            raise ValueError("approved_quantity must be positive")
-        if self.unit_price is not None and self.unit_price < 0:
-            raise ValueError("unit_price must be nonnegative")
-        if self.total_amount is not None and self.total_amount < 0:
-            raise ValueError("total_amount must be nonnegative")
+        validate_quantity(self.recommended_quantity, "recommended_quantity")
+        validate_quantity(self.approved_quantity, "approved_quantity", positive=True)
+        if self.unit_price is not None:
+            validate_quantity(self.unit_price, "unit_price")
+        if self.total_amount is not None:
+            validate_quantity(self.total_amount, "total_amount")
 
 
 @dataclass(slots=True, kw_only=True)
@@ -77,6 +76,10 @@ class PurchaseOrder:
             raise ValueError("only a draft order can be approved")
         if not self.items:
             raise ValueError("empty order cannot be approved")
+        for item in self.items:
+            validate_quantity(item.approved_quantity, "approved_quantity", positive=True)
+        if not isinstance(approved_by, UUID):
+            raise ValueError("approved_by must be a user UUID")
         approval_time = approved_at or utc_now()
         self._require_aware(approval_time, "approved_at")
         if approval_time < self.created_at:
