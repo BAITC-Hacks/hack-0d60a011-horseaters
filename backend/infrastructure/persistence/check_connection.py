@@ -1,11 +1,12 @@
 """Check the configured PostgreSQL connection without changing the schema."""
 
-from backend.domain.database import Database
 from backend.infrastructure.config.settings import Settings
+from backend.infrastructure.persistence.database import Database
 
 
 def main() -> None:
-    database = Database(Settings().database_url)
+    settings = Settings()
+    database = Database(settings.database_url, echo=settings.db_echo)
     try:
         database.check_connection()
         print("PostgreSQL: соединение установлено (SELECT 1).")

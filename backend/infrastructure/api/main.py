@@ -4,15 +4,16 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.domain.database import Database
 from backend.infrastructure.config.settings import Settings
+from backend.infrastructure.api.routers.health import router as health_router
+from backend.infrastructure.persistence.database import Database
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         config = settings if settings is not None else Settings()
-        database = Database(config.database_url)
+        database = Database(config.database_url, echo=config.db_echo)
         try:
             database.check_connection()
             app.state.database = database
@@ -26,7 +27,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     cors_origins_env = os.getenv(
         "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
     )
-    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    cors_origins = [
+        origin.strip() for origin in cors_origins_env.split(",") if origin.strip()
+    ]
     if not cors_origins:
         cors_origins = ["*"]
 

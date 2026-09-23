@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from types import TracebackType
+from typing import cast
+
+from sqlalchemy.orm import Session, sessionmaker
+
+from backend.application.ports.unit_of_work import Repository
+from backend.domain.repositories.import_repository import ImportRepository
+
+
+RepositoryFactory = Callable[[Session], Repository]
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryFactories:
+    imports: Callable[[Session], ImportRepository]
+    sales: RepositoryFactory
+    inventory: RepositoryFactory
+    suppliers: RepositoryFactory
+    calculation_runs: RepositoryFactory
+    recommendations: RepositoryFactory
+    orders: RepositoryFactory
+
+    def as_dict(self) -> dict[str, RepositoryFactory]:
+        return {
+            "imports": self.imports,
+            "sales": self.sales,
+            "inventory": self.inventory,
+            "suppliers": self.suppliers,
+            "calculation_runs": self.calculation_runs,
+            "recommendations": self.recommendations,
+            "orders": self.orders,
+        }
+
+
+class SqlAlchemyUnitOfWork:
+    """One explicit transaction shared by all repositories in a use case."""
+
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        repository_factories: RepositoryFactories,
+    ) -> None:
+        self._session_factory = session_factory
+        self._repository_factories = repository_factories
+        self._session: Session | None = None
+        self._repositories: dict[str, Repository] = {}
+
+    @property
+    def imports(self) -> ImportRepository:
+        return cast(ImportRepository, self._repository("imports"))
+
+    @property
+    def sales(self) -> Repository:
+        return self._repository("sales")
+
+    @property
+    def inventory(self) -> Repository:
+        return self._repository("inventory")
+
+    @property
+    def suppliers(self) -> Repository:
+        return self._repository("suppliers")
+
+    @property
+    def calculation_runs(self) -> Repository:
+        return self._repository("calculation_runs")
+
+    @property
+    def recommendations(self) -> Repository:
+        return self._repository("recommendations")
+
+    @property
+    def orders(self) -> Repository:
+        return self._repository("orders")
+
+    def __enter__(self) -> SqlAlchemyUnitOfWork:
+        if self._session is not None:
+            raise RuntimeError("unit of work is already active")
+
+        session = self._session_factory()
+        try:
+            repositories = {
+                name: factory(session)
+                for name, factory in self._repository_factories.as_dict().items()
+            }
+        except BaseException:
+            session.close()
+            raise
+
+        self._session = session
+        self._repositories = repositories
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        session = self._session
+        if session is None:
+            return
+        try:
+            session.rollback()
+        finally:
+            session.close()
+            self._repositories = {}
+            self._session = None
+
+    def commit(self) -> None:
+        session = self._active_session()
+        try:
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+
+    def rollback(self) -> None:
+        self._active_session().rollback()
+
+    def _active_session(self) -> Session:
+        if self._session is None:
+            raise RuntimeError("unit of work must be used inside a with block")
+        return self._session
+
+    def _repository(self, name: str) -> Repository:
+        self._active_session()
+        try:
+            return cast(Repository, self._repositories[name])
+        except KeyError:
+            raise RuntimeError(f"repository {name!r} is not configured") from None

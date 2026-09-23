@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from backend.domain.database import Database
+from backend.infrastructure.persistence.database import Database
 
 
 def get_db(request: Request) -> Iterator[Session]:
