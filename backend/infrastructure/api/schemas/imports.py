@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.domain.enums import ImportSourceType, ImportStatus
 
@@ -12,6 +12,7 @@ class ImportResponse(BaseModel):
     status: ImportStatus
     row_count: int
     file_checksum: str
+    validation_errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ImportStatusResponse(ImportResponse):

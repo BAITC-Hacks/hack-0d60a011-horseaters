@@ -121,10 +121,17 @@ class ImportApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"]["code"], "invalid_import_data")
+        self.assertEqual(response.json()["detail"]["status"], "failed")
+        self.assertEqual(response.json()["detail"]["row_count"], 0)
         with self.database.session() as session:
             batch = session.scalar(select(ImportBatchModel))
             self.assertEqual(batch.status, ImportStatus.FAILED)
             self.assertIn("ExcelImportValidationError", batch.error_details["error_type"])
+            self.assertEqual(response.json()["detail"]["import_batch_id"], str(batch.id))
+            self.assertEqual(
+                response.json()["detail"]["validation_errors"],
+                batch.error_details["validation_errors"],
+            )
 
     def test_fact_rows_are_atomic_when_database_constraint_fails(self):
         duplicate_rows = [

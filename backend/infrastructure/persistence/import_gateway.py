@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
@@ -98,13 +100,15 @@ class SqlAlchemyImportGateway:
                 raise ValueError(f"import batch {batch.id} was not found")
             if current.status is ImportStatus.FAILED:
                 return current
-            return repository.mark_failed(
-                batch.id,
-                error_details={
-                    "error_type": str(error_details.get("error_type", "ImportError"))[:100],
-                    "message": str(error_details.get("message", "import failed"))[:2000],
-                },
-            )
+            details = {
+                "error_type": str(error_details.get("error_type", "ImportError"))[:100],
+                "message": str(error_details.get("message", "import failed"))[:2000],
+            }
+            if "validation_errors" in error_details:
+                details["validation_errors"] = json.loads(json.dumps(
+                    error_details["validation_errors"], default=str,
+                ))
+            return repository.mark_failed(batch.id, error_details=details)
 
     def _write_rows(
         self,

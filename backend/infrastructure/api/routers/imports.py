@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 
-from backend.application.dto.imports import ImportFileCommand
+from backend.application.use_cases.import_data import ImportData, ImportDataCommand, ImportDataFile
 from backend.application.use_cases.import_file import ImportFileUseCase, InvalidImportFileError
 from backend.domain.enums import ImportSourceType
 from backend.domain.repositories.import_repository import DuplicateImportError
@@ -37,6 +37,7 @@ def get_import_status(request: Request, batch_id: UUID) -> ImportStatusResponse:
         status=batch.status,
         row_count=batch.row_count,
         file_checksum=batch.file_checksum,
+        validation_errors=(batch.error_details or {}).get("validation_errors", []),
         file_name=batch.file_name,
         error_details=batch.error_details,
     )
@@ -50,17 +51,15 @@ def import_file(
     file: Annotated[UploadFile, File()],
 ) -> ImportResponse:
     database: Database = request.app.state.database
-    use_case = ImportFileUseCase(
-        ExcelImportReader(),
-        SqlAlchemyImportGateway(database.session_factory),
-    )
+    use_case = ImportData(ImportFileUseCase(
+        ExcelImportReader(), SqlAlchemyImportGateway(database.session_factory),
+    ))
     try:
         result = use_case.execute(
-            ImportFileCommand(
+            ImportDataCommand(
                 source_type=source_type,
-                file_name=file.filename or "",
-                content=file.file.read(),
-                imported_by=imported_by,
+                file=ImportDataFile(file.filename or "", file.file.read()),
+                user_id=imported_by,
             )
         )
     except DuplicateImportError as error:
@@ -85,6 +84,10 @@ def import_file(
                 "code": "invalid_import_data",
                 "message": str(error),
                 "issues": error.issues,
+                "import_batch_id": str(error.batch_id) if hasattr(error, "batch_id") else None,
+                "status": "failed",
+                "row_count": 0,
+                "validation_errors": error.issues,
             },
         ) from None
     except (ValueError, IntegrityError) as error:
@@ -98,6 +101,7 @@ def import_file(
         status=result.status,
         row_count=result.row_count,
         file_checksum=result.file_checksum,
+        validation_errors=list(result.validation_errors),
     )
 
 

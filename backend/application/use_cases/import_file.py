@@ -38,8 +38,12 @@ class ImportFileUseCase:
                 "error_type": type(error).__name__,
                 "message": str(error) or "import failed",
             }
+            if hasattr(error, "issues"):
+                details["validation_errors"] = error.issues
             try:
                 self._gateway.fail(batch, error_details=details)
+                if hasattr(error, "issues"):
+                    error.batch_id = batch.id
             except Exception as failure_error:
                 error.add_note(
                     "Additionally failed to persist import failure status: "

@@ -28,3 +28,4 @@ class ImportFileResult:
     status: ImportStatus
     row_count: int
     file_checksum: str
+    validation_errors: tuple[dict[str, Any], ...] = ()
