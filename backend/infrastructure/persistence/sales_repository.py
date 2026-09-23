@@ -8,11 +8,33 @@ from backend.domain.entities.imports import MonthlySales, SalesTransaction
 from backend.domain.enums import TransactionType
 from backend.domain.repositories.filters import ALL, IdFilter
 from backend.domain.repositories.sales_repository import SalesRepository
-from ._read_repository import SqlAlchemyReadRepository, calendar_date, id_filter, time_range, visible_import
+from ._read_repository import SqlAlchemyReadRepository, calendar_date, id_filter, time_range, utc, visible_import
 from .models.imports import MonthlySalesModel, SalesTransactionModel
 
 
 class SqlAlchemySalesRepository(SqlAlchemyReadRepository, SalesRepository):
+    def get_transactions_by_ids(
+        self, transaction_ids: Collection[UUID], *, as_of: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
+    ) -> list[SalesTransaction]:
+        model = SalesTransactionModel
+        query = select(model).where(
+            model.id.in_(transaction_ids), model.sold_at <= utc(as_of),
+            visible_import(model.import_batch_id, import_batch_ids),
+        ).order_by(model.sold_at, model.id)
+        return self._read(query, SalesTransaction)
+
+    def list_returns_for_sales(
+        self, sale_ids: Collection[UUID], *, as_of: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
+    ) -> list[SalesTransaction]:
+        model = SalesTransactionModel
+        query = select(model).where(
+            model.original_transaction_id.in_(sale_ids), model.transaction_type == TransactionType.RETURN,
+            model.sold_at <= utc(as_of), visible_import(model.import_batch_id, import_batch_ids),
+        ).order_by(model.sold_at, model.id)
+        return self._read(query, SalesTransaction)
+
     def list_transactions(
         self, start: datetime, end: datetime, *, product_id: UUID | None = None,
         warehouse_id: UUID | None = None, transaction_type: TransactionType | None = None,

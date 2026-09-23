@@ -22,6 +22,10 @@ class Settings(BaseSettings):
 
     database_url: str = Field(repr=False)
     db_echo: bool = False
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: float = 15.0
+    ai_cache_ttl_seconds: int = 300
 
     @model_validator(mode="before")
     @classmethod

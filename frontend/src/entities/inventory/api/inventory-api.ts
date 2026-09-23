@@ -1,31 +1,16 @@
 import { queryOptions } from "@tanstack/react-query";
 import { apiRequest } from "@/shared/api";
 import { demoInventory } from "./demo-data";
-import { inventoryItemSchema, inventoryListSchema, inventoryUpdateSchema, type InventoryItem, type InventoryUpdate } from "../model";
+import {
+  inventoryItemSchema,
+  inventoryListSchema,
+  inventoryUpdateSchema,
+  type InventoryItem,
+  type InventoryUpdate,
+} from "../model";
 
-const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
-let demoRows = demoInventory.map((item) => ({ ...item }));
-const demoStorageKey = "stockwise-procurement-demo-v4";
-
-function readDemoRows(): InventoryItem[] {
-  if (typeof window === "undefined") return demoRows.map((item) => ({ ...item }));
-  try {
-    const saved = window.localStorage.getItem(demoStorageKey);
-    if (!saved) return demoRows.map((item) => ({ ...item }));
-    const parsed = inventoryListSchema.safeParse(JSON.parse(saved));
-    if (parsed.success) {
-      demoRows = parsed.data;
-      return parsed.data.map((item) => ({ ...item }));
-    }
-  } catch { /* Session storage is optional in the demo. */ }
-  return demoRows.map((item) => ({ ...item }));
-}
-
-function saveDemoRows(): void {
-  if (typeof window === "undefined") return;
-  try { window.localStorage.setItem(demoStorageKey, JSON.stringify(demoRows)); }
-  catch { /* In-memory demo remains usable when storage is unavailable. */ }
-}
+const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+let demoRows: InventoryItem[] = demoInventory.map((item) => ({ ...item }));
 
 export const inventoryKeys = {
   all: ["inventory"] as const,
@@ -41,25 +26,98 @@ export function inventoryQueryOptions() {
   });
 }
 
-async function getInventory(): Promise<InventoryItem[]> {
-  if (demoMode) return readDemoRows();
-  return apiRequest("/api/v1/inventory", inventoryListSchema);
+function normalizeItem(raw: Record<string, unknown>): InventoryItem {
+  const name = String(raw.item_name || raw.name || "");
+  const supplier = String(raw.supplier_name || raw.supplier || "IEK Казахстан");
+  const stock = Number(raw.current_stock ?? raw.stock ?? 0);
+  const packSize = Number(raw.package_multiplicity ?? raw.packSize ?? 1);
+  const unitCost = Number(raw.unit_price ?? raw.unitCost ?? 0);
+  const calculated_need = Number(raw.calculated_need ?? 0);
+  const adjusted_need = Number(raw.adjusted_need ?? calculated_need);
+
+  return inventoryItemSchema.parse({
+    ...raw,
+    name,
+    supplier,
+    stock,
+    packSize,
+    package_multiplicity: packSize,
+    unitCost,
+    unit_price: unitCost,
+    calculated_need,
+    adjusted_need,
+  });
 }
 
-export async function updateInventoryItem(id: string, input: InventoryUpdate): Promise<InventoryItem> {
-  const payload = inventoryUpdateSchema.parse(input);
+async function getInventory(): Promise<InventoryItem[]> {
   if (demoMode) {
-    const index = demoRows.findIndex((item) => item.id === id);
-    if (index < 0) throw new Error("Позиция не найдена.");
-    const updated = inventoryItemSchema.parse({ ...demoRows[index], ...payload });
-    demoRows = demoRows.map((item) => item.id === id ? updated : item);
-    saveDemoRows();
-    return { ...updated };
+    return demoRows.map((item) => ({ ...item }));
   }
-  return apiRequest(`/api/v1/inventory/${encodeURIComponent(id)}`, inventoryItemSchema, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+
+  try {
+    const data = await apiRequest<InventoryItem[]>(
+      "/procurement/recommendations",
+      inventoryListSchema
+    );
+    if (Array.isArray(data) && data.length > 0) {
+      demoRows = data.map((item) => normalizeItem(item as unknown as Record<string, unknown>));
+      return demoRows.map((item) => ({ ...item }));
+    }
+  } catch (err) {
+    console.warn("Backend procurement API unavailable, falling back to local dataset:", err);
+  }
+
+  return demoRows.map((item) => ({ ...item }));
+}
+
+export async function updateInventoryItem(
+  id: string,
+  input: InventoryUpdate
+): Promise<InventoryItem> {
+  const payload = inventoryUpdateSchema.parse(input);
+
+  // If connected to live backend, call PATCH
+  if (!demoMode) {
+    try {
+      const updated = await apiRequest<InventoryItem>(
+        `/procurement/recommendations/${encodeURIComponent(id)}`,
+        inventoryItemSchema,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            adjusted_need: payload.adjusted_need,
+            snap_to_multiplicity: true,
+          }),
+        }
+      );
+      const normalized = normalizeItem(updated as unknown as Record<string, unknown>);
+      demoRows = demoRows.map((item) => (item.id === id ? normalized : item));
+      return normalized;
+    } catch (err) {
+      console.warn("PATCH to backend failed, applying locally:", err);
+    }
+  }
+
+  // Local fallback mutation
+  const index = demoRows.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error("Позиция не найдена.");
+
+  const current = demoRows[index];
+  let adjustedQty = payload.adjusted_need ?? current.adjusted_need ?? 0;
+  const mult = current.package_multiplicity ?? current.packSize ?? 1;
+  if (adjustedQty > 0 && mult > 1) {
+    adjustedQty = Math.ceil(adjustedQty / mult) * mult;
+  }
+
+  const updated: InventoryItem = {
+    ...current,
+    ...payload,
+    adjusted_need: adjustedQty,
+    total_cost: adjustedQty * (current.unitCost ?? current.unit_price ?? 0),
+  };
+
+  demoRows = demoRows.map((item) => (item.id === id ? updated : item));
+  return { ...updated };
 }
 
 export async function approveInventoryItems(quantities: Record<string, number>): Promise<InventoryItem[]> {

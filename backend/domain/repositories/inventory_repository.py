@@ -48,6 +48,7 @@ class InventoryRepository(Protocol):
         *,
         started_at: datetime,
         ended_at: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
     ) -> Sequence[InventorySnapshot]: ...
 
     def add_stockout_periods(

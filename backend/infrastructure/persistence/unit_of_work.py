@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.application.ports.unit_of_work import Repository
 from backend.domain.repositories.import_repository import ImportRepository
+from backend.domain.repositories.calculation_run_repository import CalculationRunRepository
 from backend.domain.repositories.inventory_repository import InventoryRepository
 from backend.domain.repositories.material_requirement_repository import MaterialRequirementRepository
 from backend.domain.repositories.product_repository import ProductRepository
@@ -16,6 +17,8 @@ from backend.domain.repositories.sales_repository import SalesRepository
 from backend.domain.repositories.seasonality_repository import SeasonalityRepository
 from backend.domain.repositories.supplier_repository import SupplierRepository
 from backend.domain.repositories.order_repository import OrderRepository
+from backend.domain.repositories.recommendation_repository import RecommendationRepository
+from backend.domain.repositories.warehouse_repository import WarehouseRepository
 
 
 RepositoryFactory = Callable[[Session], Repository]
@@ -27,12 +30,13 @@ class RepositoryFactories:
     sales: RepositoryFactory
     inventory: Callable[[Session], InventoryRepository]
     suppliers: RepositoryFactory
-    calculation_runs: RepositoryFactory
-    recommendations: RepositoryFactory
+    calculation_runs: Callable[[Session], CalculationRunRepository]
+    recommendations: Callable[[Session], RecommendationRepository]
     orders: Callable[[Session], OrderRepository]
     products: RepositoryFactory | None = None
     seasonality: RepositoryFactory | None = None
     material_requirements: RepositoryFactory | None = None
+    warehouses: Callable[[Session], WarehouseRepository] | None = None
 
     def as_dict(self) -> dict[str, RepositoryFactory]:
         factories = {
@@ -44,7 +48,7 @@ class RepositoryFactories:
             "recommendations": self.recommendations,
             "orders": self.orders,
         }
-        for name in ("products", "seasonality", "material_requirements"):
+        for name in ("products", "seasonality", "material_requirements", "warehouses"):
             factory = getattr(self, name)
             if factory is not None:
                 factories[name] = factory
@@ -85,6 +89,10 @@ class SqlAlchemyUnitOfWork:
         return cast(ProductRepository, self._repository("products"))
 
     @property
+    def warehouses(self) -> WarehouseRepository:
+        return cast(WarehouseRepository, self._repository("warehouses"))
+
+    @property
     def seasonality(self) -> SeasonalityRepository:
         return cast(SeasonalityRepository, self._repository("seasonality"))
 
@@ -93,12 +101,12 @@ class SqlAlchemyUnitOfWork:
         return cast(MaterialRequirementRepository, self._repository("material_requirements"))
 
     @property
-    def calculation_runs(self) -> Repository:
-        return self._repository("calculation_runs")
+    def calculation_runs(self) -> CalculationRunRepository:
+        return cast(CalculationRunRepository, self._repository("calculation_runs"))
 
     @property
-    def recommendations(self) -> Repository:
-        return self._repository("recommendations")
+    def recommendations(self) -> RecommendationRepository:
+        return cast(RecommendationRepository, self._repository("recommendations"))
 
     @property
     def orders(self) -> OrderRepository:

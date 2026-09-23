@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from .enums import RecommendationStatus, Urgency
+from backend.domain.value_objects.quantity import validate_quantity
 
 
 def utc_now() -> datetime:
@@ -29,10 +30,14 @@ class RecommendationAdjustment:
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
-        if self.previous_quantity < 0 or self.new_quantity < 0:
-            raise ValueError("adjustment quantities must be nonnegative")
-        if not self.reason.strip():
+        validate_quantity(self.previous_quantity, "previous_quantity")
+        validate_quantity(self.new_quantity, "new_quantity")
+        if not isinstance(self.reason, str) or not self.reason.strip():
             raise ValueError("adjustment reason must not be empty")
+        if len(self.reason) > 2000:
+            raise ValueError("adjustment reason must not exceed 2000 characters")
+        if not isinstance(self.changed_by, UUID):
+            raise ValueError("changed_by must be a user UUID")
         require_aware(self.changed_at, "changed_at")
 
 

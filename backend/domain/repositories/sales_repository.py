@@ -9,6 +9,20 @@ from .filters import ALL, IdFilter
 
 
 class SalesRepository(Protocol):
+    def get_transactions_by_ids(
+        self, transaction_ids: Collection[UUID], *, as_of: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
+    ) -> list[SalesTransaction]:
+        """Completed-import facts known at the inclusive timestamp cutoff."""
+        ...
+
+    def list_returns_for_sales(
+        self, sale_ids: Collection[UUID], *, as_of: datetime,
+        import_batch_ids: Collection[UUID] | None = None,
+    ) -> list[SalesTransaction]:
+        """Linked returns through as_of, including returns outside the sale's month."""
+        ...
+
     def list_transactions(
         self, start: datetime, end: datetime, *, product_id: UUID | None = None,
         warehouse_id: UUID | None = None, transaction_type: TransactionType | None = None,
