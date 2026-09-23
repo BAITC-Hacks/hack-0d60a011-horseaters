@@ -24,7 +24,7 @@
 - Коэффициенты и оценки: `NUMERIC(12, 6)`.
 - Валюта: код ISO 4217 в `VARCHAR(3)`.
 - Все внешние ключи индексируются.
-- Бизнес-статусы хранятся как `VARCHAR` с `CHECK`, чтобы их можно было изменять миграциями без зависимости от PostgreSQL Enum.
+- Бизнес-статусы хранятся как `VARCHAR` с обязательным `CHECK`. Это защищает от опечаток на уровне БД так же, как PostgreSQL `ENUM`, но проще расширяется миграциями и сохраняет совместимость с SQLite для локального демо. В application-коде этим полям должны соответствовать Python Enum. Переход на PostgreSQL `ENUM` допустим позднее, если набор статусов стабилизирован и проект окончательно отказался от SQLite.
 - Физическое удаление записей, участвовавших в расчете или заказе, запрещено. Для справочников используется `is_active`.
 - `created_at` обязателен для изменяемых и аудируемых сущностей; для изменяемых записей также используется `updated_at`.
 
@@ -149,7 +149,15 @@ PurchaseOrder   1 ── N OrderExport
 
 `source_type`: `sales`, `monthly_sales`, `inventory`, `stockout`, `in_transit`, `seasonality`, `supplier_terms`, `growth`, `material_requirements`.
 
-Рекомендуемое ограничение идемпотентности: `UNIQUE(source_type, file_checksum)` для успешно завершенных импортов.
+Обязательная защита от повторной загрузки успешно обработанного файла — частичный уникальный индекс по контрольной сумме:
+
+```sql
+CREATE UNIQUE INDEX uq_import_batches_completed_checksum
+    ON import_batches (file_checksum)
+    WHERE status = 'completed';
+```
+
+Неуспешный импорт можно повторить. Перед началом обработки application-слой также должен проверить наличие завершенного импорта с тем же хэшем и вернуть понятную ошибку, а не доводить операцию до ошибки уникальности. Индекс остается последней защитой от двух одновременных загрузок одного файла.
 
 ### `sales_transactions`
 
@@ -163,17 +171,70 @@ PurchaseOrder   1 ── N OrderExport
 | `product_id` | UUID | FK → `products.id`, NOT NULL |
 | `warehouse_id` | UUID | FK → `warehouses.id`, NOT NULL |
 | `anonymous_customer_id` | VARCHAR(255) | NULL |
+| `transaction_type` | VARCHAR(20) | NOT NULL, CHECK: `sale`, `return` |
+| `original_transaction_id` | UUID | self FK → `sales_transactions.id`, NULL |
 | `quantity` | NUMERIC(18,4) | NOT NULL |
 | `unit_price` | NUMERIC(18,4) | NULL, CHECK >= 0 |
 | `total_amount` | NUMERIC(18,4) | NULL |
 
-Отрицательное `quantity` разрешается только для возврата. Импортер должен явно различать продажу и возврат либо документировать правило знака.
+Правила нормализации продаж и возвратов:
+
+- обычная продажа хранится как `transaction_type = 'sale'` и `quantity > 0`;
+- возврат хранится как `transaction_type = 'return'` и `quantity < 0`;
+- если исходный файл передает возврат положительным числом или отдельным видом документа, импортер обязан нормализовать знак;
+- если известна исходная продажа, возврат ссылается на нее через `original_transaction_id`;
+- `original_transaction_id` разрешен только для `return` и должен ссылаться на запись типа `sale`;
+- возврат не является новым отрицательным спросом и не участвует в поиске крупных заказов как отдельная продажа.
+
+Проверка знака и типа:
+
+```sql
+CHECK (
+    (transaction_type = 'sale' AND quantity > 0)
+    OR
+    (transaction_type = 'return' AND quantity < 0)
+)
+```
+
+Ссылку на запись типа `sale` невозможно полностью проверить обычным `CHECK`; это правило контролируется application/domain-слоем или constraint trigger в PostgreSQL.
+
+Правила подготовки спроса для расчета:
+
+1. Связанный возврат уменьшает количество исходной продажи и относится к периоду исходной продажи, даже если физически возврат проведен позднее.
+2. Несвязанные возвраты агрегируются отдельно по `product_id + warehouse_id + период` и уменьшают валовые продажи этого периода.
+3. Итоговый спрос периода не может стать отрицательным: после применения несвязанных возвратов используется `max(0, gross_sales + returns)`.
+4. Размер корректировки возвратами сохраняется в `demand_forecasts.return_adjustment` и в `details`.
+5. Метод обработки возвратов фиксируется в `calculation_runs.parameters.return_handling` для воспроизводимости.
 
 Индексы:
 
 - `(product_id, warehouse_id, sold_at)`;
 - `(anonymous_customer_id, sold_at)` при наличии клиентского идентификатора;
+- `(original_transaction_id)` для поиска связанной продажи;
 - `(import_batch_id, source_row_number)` UNIQUE.
+
+### `monthly_sales`
+
+Агрегированная помесячная история хранится отдельно от транзакционных продаж, поскольку у нее нет документа и клиента и ее нельзя смешивать с отдельными продажами без риска двойного учета.
+
+| Колонка | Тип | Ограничения |
+|---|---|---|
+| `id` | UUID | PK |
+| `import_batch_id` | UUID | FK → `import_batches.id`, NOT NULL |
+| `source_row_number` | INTEGER | NOT NULL |
+| `product_id` | UUID | FK → `products.id`, NOT NULL |
+| `warehouse_id` | UUID | FK → `warehouses.id`, NULL, если исходный отчет не содержит склад |
+| `period_start` | DATE | NOT NULL |
+| `period_end` | DATE | NOT NULL |
+| `quantity` | NUMERIC(18,4) | NOT NULL |
+
+Ограничения и индексы:
+
+- `UNIQUE(import_batch_id, source_row_number)`;
+- `CHECK(period_end >= period_start)`;
+- индекс `(product_id, warehouse_id, period_start, period_end)`.
+
+Транзакционные и агрегированные продажи нельзя суммировать между собой за один период. Алгоритм обязан зафиксировать выбранный источник в `calculation_runs.parameters`: транзакции являются приоритетным источником для очистки выбросов, а агрегированные данные используются как fallback и для проверки сезонности/тренда.
 
 ### `inventory_snapshots`
 
@@ -325,6 +386,7 @@ PurchaseOrder   1 ── N OrderExport
 | `forecast_period_start` | DATE | NOT NULL |
 | `forecast_period_end` | DATE | NOT NULL |
 | `raw_demand` | NUMERIC(18,4) | NOT NULL |
+| `return_adjustment` | NUMERIC(18,4) | NOT NULL, DEFAULT 0 |
 | `anomaly_adjustment` | NUMERIC(18,4) | NOT NULL |
 | `stockout_adjustment` | NUMERIC(18,4) | NOT NULL |
 | `cleaned_baseline` | NUMERIC(18,4) | NOT NULL |
@@ -334,6 +396,8 @@ PurchaseOrder   1 ── N OrderExport
 | `details` | JSONB | NOT NULL, DEFAULT '{}' |
 
 Ограничение: `UNIQUE(calculation_run_id, product_id, warehouse_id, forecast_period_start, forecast_period_end)`.
+
+Период всегда хранится двумя типизированными датами. Строковые значения наподобие `2026-Q3` или `2026-09` не используются как источник истины. Человекочитаемая подпись периода формируется API или frontend из `forecast_period_start` и `forecast_period_end`.
 
 ### `recommendations`
 
@@ -373,6 +437,7 @@ PurchaseOrder   1 ── N OrderExport
 ```json
 {
   "baseline": 120,
+  "return_adjustment": -5,
   "anomaly_adjustment": -25,
   "stockout_compensation": 15,
   "growth_multiplier": 1.08,
@@ -462,15 +527,27 @@ PurchaseOrder   1 ── N OrderExport
 Помимо PK, UNIQUE и индексов внешних ключей необходимы:
 
 - `sales_transactions(product_id, warehouse_id, sold_at)`;
+- `monthly_sales(product_id, warehouse_id, period_start, period_end)`;
 - `inventory_snapshots(product_id, warehouse_id, snapshot_at DESC)`;
 - `stockout_periods(product_id, warehouse_id, started_at, ended_at)`;
 - `in_transit_items(product_id, destination_warehouse_id, status, expected_at)`;
 - `calculation_runs(status, started_at DESC)`;
+- `recommendations(calculation_run_id, product_id, warehouse_id)`;
 - `recommendations(calculation_run_id, supplier_id, urgency)`;
 - `recommendations(calculation_run_id, warehouse_id, status)`;
 - `purchase_orders(supplier_id, status, created_at DESC)`.
 
-GIN-индексы на `JSONB` добавляются только после появления реальных запросов по JSON-полям. Основные фильтруемые значения должны оставаться обычными колонками.
+Первые колонки композитного B-tree индекса выбираются в соответствии с реальными фильтрами. Например, индекс `(product_id, warehouse_id, sold_at)` покрывает запросы по товару и по паре `товар + склад`, а также диапазон по дате. Отдельно дублировать индекс `(product_id, warehouse_id)` без подтвержденного query plan не требуется.
+
+GIN-индекс на `calculation_runs.parameters` не создается по умолчанию: в MVP поле используется для воспроизводимости, а не как основной фильтр. Если появятся запросы по содержимому параметров и `EXPLAIN ANALYZE` подтвердит необходимость, добавляется:
+
+```sql
+CREATE INDEX ix_calculation_runs_parameters_gin
+    ON calculation_runs
+    USING GIN (parameters);
+```
+
+Основные фильтруемые значения должны оставаться обычными типизированными колонками, а не переноситься в JSONB.
 
 ## 9. Транзакционные границы
 
@@ -522,7 +599,7 @@ ORM-модели не должны использоваться как доме�
 Для первого сквозного сценария обязательны:
 
 1. `users`, `categories`, `products`, `warehouses`, `suppliers`, `supplier_products`;
-2. `import_batches`, `sales_transactions`, `inventory_snapshots`, `in_transit_items`, `seasonality_coefficients`;
+2. `import_batches`, `sales_transactions`, `monthly_sales`, `inventory_snapshots`, `in_transit_items`, `seasonality_coefficients`;
 3. `calculation_runs`, `calculation_run_imports`, `detected_anomalies`, `demand_forecasts`, `recommendations`;
 4. `recommendation_adjustments`, `purchase_orders`, `purchase_order_items`, `order_exports`.
 

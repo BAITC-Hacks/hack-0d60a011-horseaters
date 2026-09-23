@@ -129,7 +129,7 @@
 Подробная модель таблиц, типов, связей, ограничений, индексов и транзакционных границ описана в [`docs/database.md`](docs/database.md). После появления миграций Alembic документ должен обновляться вместе с ними; исполняемым источником истины становятся миграции.
 
 * Справочники: `categories`, `products`, `warehouses`, `suppliers`, `supplier_products`.
-* Импорт: `import_batches`, `sales_transactions`, `inventory_snapshots`, `stockout_periods`, `in_transit_items`, `seasonality_coefficients`, `growth_assumptions`, `material_requirements`.
+* Импорт: `import_batches`, `sales_transactions`, `monthly_sales`, `inventory_snapshots`, `stockout_periods`, `in_transit_items`, `seasonality_coefficients`, `growth_assumptions`, `material_requirements`.
 * Расчет: `calculation_runs`, `calculation_run_imports`, `detected_anomalies`, `demand_forecasts`, `recommendations`.
 * Пользовательские действия: `recommendation_adjustments`, `purchase_orders`, `purchase_order_items`, `order_exports`.
 
