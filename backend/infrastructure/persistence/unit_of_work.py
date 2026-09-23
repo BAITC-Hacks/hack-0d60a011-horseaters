@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.application.ports.unit_of_work import Repository
 from backend.domain.repositories.import_repository import ImportRepository
+from backend.domain.repositories.inventory_repository import InventoryRepository
+from backend.domain.repositories.order_repository import OrderRepository
 
 
 RepositoryFactory = Callable[[Session], Repository]
@@ -18,11 +20,11 @@ RepositoryFactory = Callable[[Session], Repository]
 class RepositoryFactories:
     imports: Callable[[Session], ImportRepository]
     sales: RepositoryFactory
-    inventory: RepositoryFactory
+    inventory: Callable[[Session], InventoryRepository]
     suppliers: RepositoryFactory
     calculation_runs: RepositoryFactory
     recommendations: RepositoryFactory
-    orders: RepositoryFactory
+    orders: Callable[[Session], OrderRepository]
 
     def as_dict(self) -> dict[str, RepositoryFactory]:
         return {
@@ -58,8 +60,8 @@ class SqlAlchemyUnitOfWork:
         return self._repository("sales")
 
     @property
-    def inventory(self) -> Repository:
-        return self._repository("inventory")
+    def inventory(self) -> InventoryRepository:
+        return cast(InventoryRepository, self._repository("inventory"))
 
     @property
     def suppliers(self) -> Repository:
@@ -74,8 +76,8 @@ class SqlAlchemyUnitOfWork:
         return self._repository("recommendations")
 
     @property
-    def orders(self) -> Repository:
-        return self._repository("orders")
+    def orders(self) -> OrderRepository:
+        return cast(OrderRepository, self._repository("orders"))
 
     def __enter__(self) -> SqlAlchemyUnitOfWork:
         if self._session is not None:
