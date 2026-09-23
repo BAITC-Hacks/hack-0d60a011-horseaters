@@ -44,7 +44,9 @@ class HealthTests(unittest.TestCase):
         ):
             response = client.get("/health/db")
             self.assertEqual(response.status_code, 503)
-            self.assertEqual(response.json(), {"detail": "database unavailable"})
+        self.assertEqual(response.json()["detail"]["message"], "database unavailable")
+        self.assertEqual(response.json()["detail"]["code"], "http_503")
+        self.assertEqual(response.headers["X-Request-ID"], response.json()["request_id"])
 
 
 if __name__ == "__main__":
