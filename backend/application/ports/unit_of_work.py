@@ -3,6 +3,7 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from backend.domain.repositories.import_repository import ImportRepository
+from backend.domain.repositories.calculation_run_repository import CalculationRunRepository
 from backend.domain.repositories.inventory_repository import InventoryRepository
 from backend.domain.repositories.material_requirement_repository import MaterialRequirementRepository
 from backend.domain.repositories.product_repository import ProductRepository
@@ -10,6 +11,8 @@ from backend.domain.repositories.sales_repository import SalesRepository
 from backend.domain.repositories.seasonality_repository import SeasonalityRepository
 from backend.domain.repositories.supplier_repository import SupplierRepository
 from backend.domain.repositories.order_repository import OrderRepository
+from backend.domain.repositories.recommendation_repository import RecommendationRepository
+from backend.domain.repositories.warehouse_repository import WarehouseRepository
 
 
 class Repository(Protocol):
@@ -35,16 +38,19 @@ class UnitOfWork(Protocol):
     def products(self) -> ProductRepository: ...
 
     @property
+    def warehouses(self) -> WarehouseRepository: ...
+
+    @property
     def seasonality(self) -> SeasonalityRepository: ...
 
     @property
     def material_requirements(self) -> MaterialRequirementRepository: ...
 
     @property
-    def calculation_runs(self) -> Repository: ...
+    def calculation_runs(self) -> CalculationRunRepository: ...
 
     @property
-    def recommendations(self) -> Repository: ...
+    def recommendations(self) -> RecommendationRepository: ...
 
     @property
     def orders(self) -> OrderRepository: ...

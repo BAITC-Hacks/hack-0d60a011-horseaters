@@ -26,6 +26,14 @@ class SqlAlchemyImportRepository:
         model = self._session.get(ImportBatchModel, batch_id)
         return self._to_domain(model) if model is not None else None
 
+    def list_completed(self) -> list[ImportBatch]:
+        models = self._session.scalars(
+            select(ImportBatchModel)
+            .where(ImportBatchModel.status == ImportStatus.COMPLETED)
+            .order_by(ImportBatchModel.imported_at, ImportBatchModel.id)
+        ).all()
+        return [self._to_domain(model) for model in models]
+
     def get_completed_by_checksum(self, file_checksum: str) -> ImportBatch | None:
         model = self._session.scalar(
             select(ImportBatchModel)
