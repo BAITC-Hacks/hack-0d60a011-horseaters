@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.application.ports.unit_of_work import Repository
 from backend.domain.repositories.import_repository import ImportRepository
+from backend.domain.repositories.inventory_repository import InventoryRepository
+from backend.domain.repositories.material_requirement_repository import MaterialRequirementRepository
+from backend.domain.repositories.product_repository import ProductRepository
+from backend.domain.repositories.sales_repository import SalesRepository
+from backend.domain.repositories.seasonality_repository import SeasonalityRepository
+from backend.domain.repositories.supplier_repository import SupplierRepository
 
 
 RepositoryFactory = Callable[[Session], Repository]
@@ -23,9 +29,12 @@ class RepositoryFactories:
     calculation_runs: RepositoryFactory
     recommendations: RepositoryFactory
     orders: RepositoryFactory
+    products: RepositoryFactory | None = None
+    seasonality: RepositoryFactory | None = None
+    material_requirements: RepositoryFactory | None = None
 
     def as_dict(self) -> dict[str, RepositoryFactory]:
-        return {
+        factories = {
             "imports": self.imports,
             "sales": self.sales,
             "inventory": self.inventory,
@@ -34,6 +43,11 @@ class RepositoryFactories:
             "recommendations": self.recommendations,
             "orders": self.orders,
         }
+        for name in ("products", "seasonality", "material_requirements"):
+            factory = getattr(self, name)
+            if factory is not None:
+                factories[name] = factory
+        return factories
 
 
 class SqlAlchemyUnitOfWork:
@@ -54,16 +68,28 @@ class SqlAlchemyUnitOfWork:
         return cast(ImportRepository, self._repository("imports"))
 
     @property
-    def sales(self) -> Repository:
-        return self._repository("sales")
+    def sales(self) -> SalesRepository:
+        return cast(SalesRepository, self._repository("sales"))
 
     @property
-    def inventory(self) -> Repository:
-        return self._repository("inventory")
+    def inventory(self) -> InventoryRepository:
+        return cast(InventoryRepository, self._repository("inventory"))
 
     @property
-    def suppliers(self) -> Repository:
-        return self._repository("suppliers")
+    def suppliers(self) -> SupplierRepository:
+        return cast(SupplierRepository, self._repository("suppliers"))
+
+    @property
+    def products(self) -> ProductRepository:
+        return cast(ProductRepository, self._repository("products"))
+
+    @property
+    def seasonality(self) -> SeasonalityRepository:
+        return cast(SeasonalityRepository, self._repository("seasonality"))
+
+    @property
+    def material_requirements(self) -> MaterialRequirementRepository:
+        return cast(MaterialRequirementRepository, self._repository("material_requirements"))
 
     @property
     def calculation_runs(self) -> Repository:
