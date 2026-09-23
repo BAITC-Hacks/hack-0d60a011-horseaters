@@ -11,10 +11,10 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.domain.database import Database, DatabaseConnectionError
 from backend.infrastructure.api.dependencies import get_db
 from backend.infrastructure.api.main import create_app
 from backend.infrastructure.config.settings import Settings
+from backend.infrastructure.persistence.database import Database, DatabaseConnectionError
 
 
 POSTGRES_URL = "postgresql+psycopg://test_user:unused@localhost:5432/warehouse_test"
@@ -92,7 +92,7 @@ class DatabaseTests(unittest.TestCase):
         with patch("backend.infrastructure.api.main.Database", return_value=database) as factory, \
                 patch.object(database, "dispose", wraps=database.dispose) as dispose, \
                 TestClient(app, raise_server_exceptions=False) as client:
-            factory.assert_called_once_with(POSTGRES_URL)
+            factory.assert_called_once_with(POSTGRES_URL, echo=False)
             with app.state.database.session() as session:
                 session.execute(text("CREATE TABLE items (id INTEGER PRIMARY KEY)"))
             self.assertEqual(client.post("/items/1").status_code, 200)

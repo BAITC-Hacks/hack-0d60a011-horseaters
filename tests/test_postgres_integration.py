@@ -6,8 +6,8 @@ import unittest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from backend.domain.database import Database
 from backend.infrastructure.config.settings import Settings
+from backend.infrastructure.persistence.database import Database
 
 
 @unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"), "TEST_DATABASE_URL is not set")
