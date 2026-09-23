@@ -32,8 +32,8 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
   const openDrawer = useAiStore((state) => state.openDrawer);
   const quantityById = useOrderQuantityStore((state) => state.quantityById);
   const setQuantity = useOrderQuantityStore((state) => state.setQuantity);
-  const allVisibleSelected =
-    items.length > 0 && items.every((item) => selectedIds.includes(item.id));
+  const selectableItems = items.filter((item) => item.status !== "approved");
+  const allVisibleSelected = selectableItems.length > 0 && selectableItems.every((item) => selectedIds.includes(item.id));
 
   function handleQuantityChange(item: InventoryItem, rawVal: number) {
     const mult = item.package_multiplicity ?? item.packSize ?? 1;
@@ -57,8 +57,8 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
                 checked={allVisibleSelected}
                 onChange={() =>
                   allVisibleSelected
-                    ? clearMany(items.map((item) => item.id))
-                    : selectMany(items.map((item) => item.id))
+                    ? clearMany(selectableItems.map((item) => item.id))
+                    : selectMany(selectableItems.map((item) => item.id))
                 }
                 className="h-4 w-4 rounded accent-blue-500"
               />
@@ -77,8 +77,8 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
           {items.map((item) => {
             const stockStatus = getStockStatus(item);
             const status = statusCopy[stockStatus];
-            const suggestedQuantity = getSuggestedQuantity(item);
-            const quantity = quantityById[item.id] ?? suggestedQuantity;
+            const suggestedQuantity = getSuggestedQuantity(item, days);
+            const quantity = item.approvedQuantity ?? quantityById[item.id] ?? suggestedQuantity;
             const mult = item.package_multiplicity ?? item.packSize ?? 1;
             const inTransit = item.in_transit ?? 0;
 
@@ -93,6 +93,7 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
                     type="checkbox"
                     checked={selectedIds.includes(item.id)}
                     onChange={() => toggle(item.id)}
+                    disabled={item.status === "approved"}
                     className="h-4 w-4 rounded accent-blue-500"
                   />
                 </TableCell>
@@ -187,7 +188,7 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
                 <TableCell>
                   <Badge tone={status.tone}>
                     <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${status.dot}`} />
-                    {item.urgency || status.label}
+                    {item.status === "approved" ? "APPROVED" : item.urgency || status.label}
                   </Badge>
                 </TableCell>
 
@@ -199,6 +200,7 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
                       min={0}
                       step={mult}
                       value={quantity}
+                      disabled={item.status === "approved"}
                       onChange={(event) =>
                         handleQuantityChange(item, event.currentTarget.valueAsNumber)
                       }
@@ -233,6 +235,7 @@ export function InventoryTable({ items, days }: { items: InventoryItem[]; days: 
                     <button
                       aria-label={`Изменить параметры: ${item.name}`}
                       onClick={() => openEdit(item.id)}
+                      disabled={item.status === "approved"}
                       title="Редактировать параметры"
                       className="rounded-xl p-2 text-muted-foreground transition hover:bg-card-muted hover:text-foreground"
                     >

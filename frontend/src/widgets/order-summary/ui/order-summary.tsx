@@ -7,8 +7,8 @@ import { useOrderQuantityStore } from "@/features/adjust-order-quantity";
 import { useAiStore } from "@/features/ai-analysis";
 import { exportOrderCsv } from "@/features/export-order";
 import { useSelectionStore } from "@/features/select-items";
-import { formatMoney } from "@/shared/lib";
-import { Card } from "@/shared/ui";
+import { formatMoney, formatNumber } from "@/shared/lib";
+import { Button, Card } from "@/shared/ui";
 
 export function OrderSummary({ items, days }: { items: InventoryItem[]; days: number }) {
   const selectedIds = useSelectionStore((state) => state.selectedIds);
@@ -16,8 +16,8 @@ export function OrderSummary({ items, days }: { items: InventoryItem[]; days: nu
   const openLetter = useAiStore((state) => state.openLetterModal);
   const [notice, setNotice] = useState("");
   const scoped = selectedIds.length > 0 ? items.filter((item) => selectedIds.includes(item.id)) : items;
-  const orderItems = scoped.filter((item) => (quantityById[item.id] ?? getSuggestedQuantity(item)) > 0);
-  const total = orderItems.reduce((sum, item) => sum + (quantityById[item.id] ?? getSuggestedQuantity(item)) * (item.unit_price ?? item.unitCost ?? 0), 0);
+  const orderItems = scoped.filter((item) => item.status !== "approved" && (quantityById[item.id] ?? getSuggestedQuantity(item, days)) > 0);
+  const total = orderItems.reduce((sum, item) => sum + (quantityById[item.id] ?? getSuggestedQuantity(item, days)) * (item.unit_price ?? item.unitCost ?? 0), 0);
   const suppliers = new Set(orderItems.map((item) => item.supplier || item.supplier_name)).size;
 
   function download() {

@@ -9,7 +9,7 @@ export function simulateScenario(items: InventoryItem[], params: ScenarioParams)
   const serviceMultiplier = 1 + (params.serviceLevel - 95) * 0.06;
   const rows = items.map((item) => {
     const delayed = { ...item, leadDays: item.leadDays + params.delayDays };
-    const quantity = getSuggestedQuantity(delayed, params.horizonDays, 1 + params.growthPercent / 100, serviceMultiplier);
+    const quantity = getSuggestedQuantity(delayed, params.horizonDays, 1 + params.growthPercent / 100, serviceMultiplier, false);
     return { item, quantity, cost: quantity * item.unitCost, included: false, urgency: item.riskScore + (item.stock < (item.demand30 / 30) * delayed.leadDays ? 0.4 : 0) };
   }).sort((a, b) => b.urgency - a.urgency || b.item.demand30 * b.item.unitCost - a.item.demand30 * a.item.unitCost);
 

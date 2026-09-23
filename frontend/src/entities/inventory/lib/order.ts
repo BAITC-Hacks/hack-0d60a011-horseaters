@@ -17,17 +17,21 @@ export function getStockStatus(item: InventoryItem): StockStatus {
   return "healthy";
 }
 
-export function getSuggestedQuantity(item: InventoryItem): number {
-  if (item.adjusted_need !== undefined && item.adjusted_need !== null) {
+export function getSuggestedQuantity(
+  item: InventoryItem,
+  horizonDays = 30,
+  growthMultiplier = 1,
+  serviceMultiplier = 1,
+  preferAdjusted = true,
+): number {
+  if (preferAdjusted && horizonDays === 30 && growthMultiplier === 1 && serviceMultiplier === 1 && item.adjusted_need !== undefined) {
     return item.adjusted_need;
   }
-  if (item.calculated_need !== undefined && item.calculated_need !== null) {
+  if (preferAdjusted && horizonDays === 30 && growthMultiplier === 1 && serviceMultiplier === 1 && item.calculated_need !== undefined) {
     return item.calculated_need;
   }
-  const min = item.minStock ?? 0;
-  const lead = item.leadDays ?? 14;
-  const demand = item.demand30 ?? 0;
-  const pack = item.package_multiplicity ?? item.packSize ?? 1;
-  const need = Math.max(0, min + (demand / 30) * lead - item.stock);
-  return Math.ceil(need / pack) * pack;
+  const demand = (item.demand30 / 30) * (Math.max(1, horizonDays) + item.leadDays) * item.growthFactor * item.seasonalityIndex * growthMultiplier;
+  const need = Math.max(0, demand + item.minStock * serviceMultiplier + item.materialNeed - item.stock - item.inTransit);
+  if (need === 0) return 0;
+  return Math.ceil(Math.max(need, item.moq) / item.packSize) * item.packSize;
 }
